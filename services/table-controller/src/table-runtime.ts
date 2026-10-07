@@ -102,18 +102,29 @@ export class TableRuntime {
   }
 
   /**
-   * Seat a human at the next free chair (1–5). Live tables start empty;
+   * Seat a human at a free chair (1–5). Live tables start empty;
    * reclaiming the same playerId returns their existing seat.
+   * Pass `preferredSeat` to sit at a specific open chair.
    */
   claimSeat(
     displayName: string,
     playerId = crypto.randomUUID(),
     avatarUrl?: string,
+    preferredSeat?: number,
   ): Player {
     const existing = this.state.players.find((p) => p.id === playerId);
     if (existing) {
       existing.displayName = displayName.trim() || existing.displayName;
       if (avatarUrl !== undefined) existing.avatarUrl = avatarUrl || undefined;
+      if (
+        preferredSeat != null &&
+        preferredSeat !== existing.seat &&
+        (this.state.table.phase === "betting" ||
+          this.state.table.phase === "open" ||
+          this.state.table.phase === "closed")
+      ) {
+        return this.moveToSeat(playerId, preferredSeat);
+      }
       this.publishState();
       return structuredClone(existing);
     }
@@ -122,10 +133,19 @@ export class TableRuntime {
     }
     const taken = new Set(this.state.players.map((p) => p.seat));
     let seat = 0;
-    for (let i = 1; i <= 5; i++) {
-      if (!taken.has(i)) {
-        seat = i;
-        break;
+    if (
+      preferredSeat != null &&
+      preferredSeat >= 1 &&
+      preferredSeat <= 5 &&
+      !taken.has(preferredSeat)
+    ) {
+      seat = preferredSeat;
+    } else {
+      for (let i = 1; i <= 5; i++) {
+        if (!taken.has(i)) {
+          seat = i;
+          break;
+        }
       }
     }
     if (!seat) {
@@ -140,6 +160,12 @@ export class TableRuntime {
         bot.hands = [];
         bot.activeHandIndex = 0;
         bot.currentBet = 0;
+        if (preferredSeat != null && preferredSeat >= 1 && preferredSeat <= 5) {
+          const occupied = this.state.players.some(
+            (p) => p.seat === preferredSeat && p.id !== bot.id && !isBot(p.id),
+          );
+          if (!occupied) bot.seat = preferredSeat;
+        }
         this.publishState();
         return structuredClone(bot);
       }
@@ -157,6 +183,39 @@ export class TableRuntime {
       avatarUrl: avatarUrl || undefined,
     };
     this.state.players = [...this.state.players, player].sort((a, b) => a.seat - b.seat);
+    this.publishState();
+    return structuredClone(player);
+  }
+
+  /** Move to an empty seat while bets are open (clears any chips first). */
+  moveToSeat(playerId: string, seat: number): Player {
+    if (seat < 1 || seat > 5) {
+      throw new Error("Invalid seat");
+    }
+    const phase = this.state.table.phase;
+    if (phase !== "betting" && phase !== "open" && phase !== "closed") {
+      throw new Error("Can only change seats between hands");
+    }
+    const player = this.state.players.find((p) => p.id === playerId);
+    if (!player) {
+      throw new Error("You are not seated");
+    }
+    if (player.seat === seat) {
+      return structuredClone(player);
+    }
+    const occupant = this.state.players.find((p) => p.seat === seat && p.id !== playerId);
+    if (occupant && !isBot(occupant.id)) {
+      throw new Error("That seat is taken");
+    }
+    if (occupant && isBot(occupant.id)) {
+      this.state.players = this.state.players.filter((p) => p.id !== occupant.id);
+    }
+    if (player.currentBet > 0 || player.chipStack.length > 0) {
+      player.chipStack = [];
+      player.currentBet = 0;
+    }
+    player.seat = seat;
+    this.state.players = [...this.state.players].sort((a, b) => a.seat - b.seat);
     this.publishState();
     return structuredClone(player);
   }

@@ -116,6 +116,9 @@ export function useLiveTable(opts: {
     follow: (next: boolean) => {
       sessionRef.current?.follow(next);
     },
+    chooseSeat: (seat: number) => {
+      sessionRef.current?.chooseSeat(seat);
+    },
     sendReaction: (kind: ReactionKind, emoji: string, toSeat: number | null = null) => {
       sessionRef.current?.sendReaction(kind, emoji, toSeat);
     },

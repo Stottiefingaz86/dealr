@@ -118,6 +118,7 @@ export function TableScene({
   dealerTotal,
   canBet,
   onBet,
+  onSit,
   dealerVideoRef,
 }: {
   settings: PlayerEnvironmentSettings;
@@ -127,6 +128,8 @@ export function TableScene({
   dealerTotal: string | null;
   canBet: boolean;
   onBet: () => void;
+  /** Tap an empty pad to sit there (friends table). */
+  onSit?: (seat: number) => void;
   /** Keyed dealer <video>; reflected on the glass so she reads as standing at the table. */
   dealerVideoRef?: RefObject<HTMLVideoElement | null>;
 }) {
@@ -213,6 +216,7 @@ export function TableScene({
               betting={betting}
               canBet={canBet && seat.isLocal}
               onBet={onBet}
+              onSit={onSit ? () => onSit(seat.seat) : undefined}
               hue={hue}
               scale={unit}
             />
@@ -754,6 +758,7 @@ function Seat({
   betting,
   canBet,
   onBet,
+  onSit,
   hue,
   scale,
 }: {
@@ -761,6 +766,7 @@ function Seat({
   betting: boolean;
   canBet: boolean;
   onBet: () => void;
+  onSit?: () => void;
   hue: number;
   scale: number;
 }) {
@@ -770,13 +776,49 @@ function Seat({
   const name = model.displayName ?? (model.isLocal ? "You" : "");
   const hasBet = model.chips.length > 0;
 
-  // Empty seats stay invisible — no lock disks, Open pills, or "?" placeholders.
-  // Keep a zero-size anchor so throws can still target the seat slot.
-  if (vacant) {
+  // Outside betting, empty chairs stay quiet — only anchors for throws.
+  if (vacant && !betting) {
     return (
-      <Standee x={geo.tag.x} y={geo.tag.y} scale={sc}>
+      <FlatGroup x={geo.spot.x} y={geo.spot.y} scale={sc}>
         <div data-seat-drop={model.seat} data-seat-anchor={model.seat} className="size-1 opacity-0" />
-      </Standee>
+      </FlatGroup>
+    );
+  }
+
+  // During betting, empty pads are sit targets so friends can pick a chair.
+  if (vacant && betting) {
+    return (
+      <>
+        <FlatGroup x={geo.spot.x} y={geo.spot.y} scale={sc} className="pointer-events-auto">
+          <div data-seat-anchor={model.seat} className="pointer-events-none absolute left-1/2 top-1/2 size-1 -translate-x-1/2 -translate-y-1/2 opacity-0" />
+          <motion.button
+            type="button"
+            onClick={onSit}
+            disabled={!onSit}
+            aria-label={`Sit at seat ${model.seat}`}
+            className={`relative flex size-[68px] items-center justify-center rounded-full ${
+              onSit ? "cursor-pointer" : "cursor-default"
+            }`}
+            style={{ transformStyle: "flat" }}
+            initial={{ scale: 0.5, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.6, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 280, damping: 24 }}
+          >
+            <span
+              className="absolute inset-0 rounded-full"
+              style={{
+                background:
+                  "radial-gradient(circle at 50% 45%, rgba(22,22,30,0.55), rgba(8,8,12,0.25) 70%, transparent 100%)",
+                boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.16), 0 0 18px rgba(0,0,0,0.35)",
+              }}
+            />
+            <span className="relative text-[10px] font-semibold tracking-[0.18em] text-white/55 uppercase">
+              Sit
+            </span>
+          </motion.button>
+        </FlatGroup>
+      </>
     );
   }
 
@@ -807,6 +849,11 @@ function Seat({
             scale={sc}
             className="pointer-events-auto"
           >
+            {/* Measured for chip tray / action dock — glued to the pad, not the tag. */}
+            <div
+              data-seat-anchor={model.seat}
+              className="pointer-events-none absolute left-1/2 top-1/2 size-1 -translate-x-1/2 -translate-y-1/2 opacity-0"
+            />
             <motion.button
               type="button"
               disabled={!canBet}
@@ -937,12 +984,12 @@ function Seat({
         <CardFan cards={model.cards} size="md" total={model.handTotal} />
       </FlatGroup>
 
-      {/* Identity tag — avatar + name + wager */}
+      {/* Identity tag — avatar + name + wager. Anchor only when pad isn't up. */}
       <Standee x={geo.tag.x} y={geo.tag.y} scale={sc} className="pointer-events-auto">
         <div
           className="relative flex flex-col items-center"
           data-seat-drop={model.seat}
-          data-seat-anchor={model.seat}
+          {...(!betting ? { "data-seat-anchor": model.seat } : {})}
           style={{ transformStyle: "flat", visibility: model.hideTag ? "hidden" : "visible" }}
         >
           <div className="pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2">

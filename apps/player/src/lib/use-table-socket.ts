@@ -188,6 +188,9 @@ export function useTableSocket(opts?: { enabled?: boolean }) {
         follow: next,
       });
     },
+    chooseSeat: (_seat: number) => {
+      /* Solo demo seats are fixed — friends tables handle this via PeerJS. */
+    },
     sendReaction: (kind: ReactionKind, emoji: string, toSeat: number | null = null) => {
       if (demoRef.current) {
         demoRef.current.sendReaction(kind, emoji, toSeat);

@@ -88,6 +88,7 @@ export function TableExperience({
     confirmBet,
     sendAction,
     follow,
+    chooseSeat,
     sendChat,
     tip,
     sendReaction,
@@ -334,8 +335,16 @@ export function TableExperience({
   });
 
   // Screen-space anchors (measured through the 3D plane) for menus + throws
-  const anchorSpots = useAnchorSpots(mainRef, sceneSeats.map((s) => `${s.seat}:${s.displayName}:${s.cards.length}`).join("|"));
-  const localSpot = anchorSpots[localSeat] ?? { x: 50, y: 78 };
+  const anchorSpots = useAnchorSpots(
+    mainRef,
+    `${sceneSeats.map((s) => `${s.seat}:${s.displayName}:${s.cards.length}`).join("|")}:${phase}:${localSeat}`,
+  );
+  const geoFallback = seatGeometry(localSeat);
+  // Never fall back to screen-centre — that put the tray under the wrong pad.
+  const localSpot = anchorSpots[localSeat] ?? {
+    x: geoFallback.spot.x,
+    y: Math.min(86, 52 + geoFallback.spot.y * 0.35),
+  };
   const seatTargets = [
     {
       seat: DEALER_THROW_SEAT,
@@ -406,6 +415,11 @@ export function TableExperience({
         dealerTotal={handLabel(dealerHand)}
         canBet={betting}
         onBet={placeOnLocalSeat}
+        onSit={(seat) => {
+          if (!betting || seat === localSeat) return;
+          unlockAudio();
+          chooseSeat(seat);
+        }}
         dealerVideoRef={dealerVideoRef}
       />
 

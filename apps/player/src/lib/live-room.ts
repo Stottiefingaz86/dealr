@@ -111,6 +111,7 @@ export type LiveWire =
   | { t: "sendChat"; text: string }
   | { t: "sendReaction"; kind: ReactionKind; emoji: string; toSeat: number | null }
   | { t: "follow"; following: boolean }
+  | { t: "chooseSeat"; seat: number }
   | { t: "claimReward"; missionId: string; missionTitle: string; amount: number; unlockLabel?: string };
 
 export type LiveSinks = {
@@ -378,6 +379,11 @@ export class LiveHost {
             "tip",
           );
           break;
+        case "chooseSeat": {
+          const moved = this.runtime.moveToSeat(playerId, msg.seat);
+          this.announce(`${moved.displayName} moved to seat ${moved.seat}`);
+          break;
+        }
         default:
           break;
       }
@@ -471,6 +477,9 @@ export class LiveHost {
   }
   follow(next: boolean) {
     this.handleAction(this.playerId, { t: "follow", following: next });
+  }
+  chooseSeat(seat: number) {
+    this.handleAction(this.playerId, { t: "chooseSeat", seat });
   }
 }
 
@@ -681,6 +690,9 @@ export class LiveGuest {
   }
   follow(next: boolean) {
     this.emit({ t: "follow", following: next });
+  }
+  chooseSeat(seat: number) {
+    this.emit({ t: "chooseSeat", seat });
   }
 }
 

@@ -28,7 +28,11 @@ export function useAnchorSpots(
       const next: Record<number, TableSpot> = {};
       container.querySelectorAll<HTMLElement>("[data-seat-anchor]").forEach((el) => {
         const seat = Number(el.dataset.seatAnchor);
+        if (!Number.isFinite(seat)) return;
         const rect = el.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0 && rect.top === 0 && rect.left === 0) {
+          return;
+        }
         next[seat] = {
           x: ((rect.left + rect.width / 2 - bounds.left) / bounds.width) * 100,
           y: ((rect.top + rect.height / 2 - bounds.top) / bounds.height) * 100,
@@ -41,7 +45,7 @@ export function useAnchorSpots(
           keys.every((k) => {
             const a = prev[Number(k)];
             const b = next[Number(k)]!;
-            return a && Math.abs(a.x - b.x) < 0.2 && Math.abs(a.y - b.y) < 0.2;
+            return a && Math.abs(a.x - b.x) < 0.15 && Math.abs(a.y - b.y) < 0.15;
           })
         ) {
           return prev;
@@ -50,16 +54,16 @@ export function useAnchorSpots(
       });
     };
 
-    // Standees animate in; measure now and again shortly after.
+    // 3D pads spring in — measure now and a few times after layout settles.
     measure();
-    const t = window.setTimeout(measure, 500);
+    const timers = [80, 200, 450, 900].map((ms) => window.setTimeout(measure, ms));
     const onResize = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(measure);
     };
     window.addEventListener("resize", onResize);
     return () => {
-      window.clearTimeout(t);
+      for (const t of timers) window.clearTimeout(t);
       cancelAnimationFrame(frame);
       window.removeEventListener("resize", onResize);
     };
