@@ -6,7 +6,7 @@ import { ChromaKeyVideo, type ChromaKeyOptions } from "./chroma-key-video";
 export type FeedStatus = "idle" | "loading" | "live" | "error";
 
 /** Desktop framing of the dealer canvas, in viewport %. Shared with the table reflection. */
-export const DEALER_FRAME = { top: 9, height: 68 };
+export const DEALER_FRAME = { top: 6, height: 74 };
 /** Portrait-phone feed width as a multiple of the viewport width. */
 export const PHONE_CROP = 1.25;
 /** Portrait-phone feed top as a fraction of the viewport height — pushes the table to mid-screen. */
@@ -26,9 +26,14 @@ export function dealerFrameFor(w: number, h: number) {
     const height = (width * 9) / 16;
     return { left: (w - width) / 2, top: h * PHONE_TOP, width, height };
   }
-  const height = (h * DEALER_FRAME.height) / 100;
-  const width = (height * 16) / 9;
-  return { left: (w - width) / 2, top: (h * DEALER_FRAME.top) / 100, width, height };
+  // Prefer a tall 16:9 feed. On ultrawide, grow toward ~90% of width so the
+  // table isn't a postage stamp between black letterbox bars.
+  const heightFromViewport = (h * DEALER_FRAME.height) / 100;
+  const widthFromHeight = (heightFromViewport * 16) / 9;
+  const width = Math.min(w * 0.92, Math.max(widthFromHeight, Math.min(w * 0.78, (h * 0.88 * 16) / 9)));
+  const height = (width * 9) / 16;
+  const top = Math.max(h * 0.04, Math.min((h * DEALER_FRAME.top) / 100, h - height - h * 0.02));
+  return { left: (w - width) / 2, top, width, height };
 }
 
 export type DealerFrame = ReturnType<typeof dealerFrameFor>;
@@ -104,9 +109,16 @@ export function DealerVideoLayer({
   }, [sources.join("|")]);
 
   const live = status === "live";
+  const rootRef = useRef<HTMLDivElement>(null);
+  const { w, h } = useContainerSize(rootRef);
+  const frame = w > 0 && h > 0 ? dealerFrameFor(w, h) : null;
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-[3] overflow-hidden" aria-hidden={!live}>
+    <div
+      ref={rootRef}
+      className="pointer-events-none absolute inset-0 z-[3] overflow-hidden"
+      aria-hidden={!live}
+    >
       {/* Source — hidden when keyed; the canvas is what you see */}
       <video
         ref={videoRef}
@@ -128,20 +140,17 @@ export function DealerVideoLayer({
         ))}
       </video>
 
-      {keyed ? (
+      {keyed && frame ? (
         <div
-          // Phones: size by width so she isn't a giant; desktop: size by height so
-          // her waist lands at the table's far edge.
-          className="absolute left-1/2 top-[var(--phone-top)] aspect-video w-[var(--phone-w)] -translate-x-1/2 transition-opacity duration-700 sm:top-[var(--dealer-top)] sm:h-[var(--dealer-height)] sm:w-auto"
-          style={
-            {
-              opacity: live ? 1 : 0,
-              "--phone-w": `${PHONE_CROP * 100}vw`,
-              "--phone-top": `${PHONE_TOP * 100}%`,
-              "--dealer-top": `${DEALER_FRAME.top}%`,
-              "--dealer-height": `${DEALER_FRAME.height}%`,
-            } as React.CSSProperties
-          }
+          // Same rectangle as TableScene — keeps her glued to the felt on any monitor.
+          className="absolute transition-opacity duration-700"
+          style={{
+            opacity: live ? 1 : 0,
+            left: frame.left,
+            top: frame.top,
+            width: frame.width,
+            height: frame.height,
+          }}
         >
           {/* Soft presence glow behind her so she separates from the room */}
           <div

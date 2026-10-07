@@ -141,7 +141,8 @@ export function TableScene({
     ? dealerFrameFor(w, h)
     : { left: 0, top: 0, width: 0, height: 0 };
   // Everything on the slab scales with the feed, so a 390px phone shows the same
-  // table at ~0.7× rather than a re-flowed layout.
+  // table at ~0.7× rather than a re-flowed layout. Cap used to sit at 1.15 — on
+  // large / 4K monitors that left fingernail cards on a stadium-sized table.
   const cropped = ready && w <= 640;
   useEffect(() => {
     setSeatLayoutCompact(cropped);
@@ -149,7 +150,10 @@ export function TableScene({
   }, [cropped]);
 
   const unit = ready
-    ? Math.min(cropped ? 0.95 : 1.15, Math.max(0.5, frame.width / REFERENCE_FRAME_WIDTH))
+    ? Math.max(
+        cropped ? 0.55 : 0.7,
+        Math.min(cropped ? 1.0 : 2.45, frame.width / REFERENCE_FRAME_WIDTH),
+      )
     : 1;
   const planeV = cropped ? PLANE_V_COMPACT : PLANE_V;
   const plane = {
