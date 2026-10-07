@@ -30,14 +30,10 @@ PostgreSQL is optional for this loop. `docker compose up -d` then `pnpm db:gener
 
 ## Deploy (Vercel)
 
-Deploy the player app only — Nest API / websocket stay on a separate host.
+Player Root Directory: `apps/player` (Next.js, with `/api/dealer/*` for TTS).
 
-The player is a static Next export (`apps/player/out`). Root `vercel.json` builds
-`@live-dealr/player` and publishes that folder, so the project Root Directory can
-stay at the repo root (the root `package.json` has no `next`).
-
-1. Import `Stottiefingaz86/dealr` in Vercel.
-2. Leave Root Directory as `.` (or set it to `apps/player` — both work).
-3. Point `NEXT_PUBLIC_*` env vars at your API / stream URLs when you have them.
+1. Set `DEEPGRAM_API_KEY` as a **Secret** on the Vercel project (Production + Preview).
+2. Deploy — speech hits same-origin `/api/dealer/speak` (Hannah via Deepgram).
+3. Optional: Nest API elsewhere for sockets; set `NEXT_PUBLIC_API_URL` only if you have one.
 
 Root `pnpm build` builds `@live-dealr/player` only. Use `pnpm build:all` for the full turbo graph.

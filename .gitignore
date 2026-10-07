@@ -12,3 +12,5 @@ database/generated
 apps/*/.next
 **/*.tsbuildinfo
 apps/*/out
+.vercel
+.env*

@@ -57,43 +57,56 @@ export function handTotalWords(label: string | null | undefined): string | null 
   return soft ? `soft ${words}` : words;
 }
 
+/** Same-origin Next route first (Vercel), then optional Nest API. */
+function speakEndpoints(): string[] {
+  const endpoints = ["/api/dealer/speak"];
+  const api = resolveApiUrl();
+  if (api) endpoints.push(`${api}/dealer/speak`);
+  return endpoints;
+}
+
+function voiceProbeEndpoints(): string[] {
+  const endpoints = ["/api/dealer/voice"];
+  const api = resolveApiUrl();
+  if (api) endpoints.push(`${api}/dealer/voice`);
+  return endpoints;
+}
+
 async function probeVoice(): Promise<boolean> {
   if (voiceAvailable !== null) return voiceAvailable;
-  const api = resolveApiUrl();
-  if (!api) {
-    voiceAvailable = false;
-    return false;
-  }
-  try {
-    const res = await fetch(`${api}/dealer/voice`, { method: "GET" });
-    if (!res.ok) {
-      voiceAvailable = false;
-      return false;
+  for (const url of voiceProbeEndpoints()) {
+    try {
+      const res = await fetch(url, { method: "GET" });
+      if (!res.ok) continue;
+      const data = (await res.json()) as { enabled?: boolean };
+      if (data.enabled) {
+        voiceAvailable = true;
+        return true;
+      }
+    } catch {
+      // try next
     }
-    const data = (await res.json()) as { enabled?: boolean };
-    voiceAvailable = Boolean(data.enabled);
-    return voiceAvailable;
-  } catch {
-    voiceAvailable = false;
-    return false;
   }
+  voiceAvailable = false;
+  return false;
 }
 
 async function fetchSpeech(text: string): Promise<Blob | null> {
-  const api = resolveApiUrl();
-  if (!api) return null;
   if (!(await probeVoice())) return null;
-  try {
-    const res = await fetch(`${api}/dealer/speak`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
-    if (!res.ok) return null;
-    return await res.blob();
-  } catch {
-    return null;
+  for (const url of speakEndpoints()) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) continue;
+      return await res.blob();
+    } catch {
+      // try next
+    }
   }
+  return null;
 }
 
 function playBlob(blob: Blob): Promise<void> {

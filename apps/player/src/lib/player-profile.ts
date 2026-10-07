@@ -75,5 +75,5 @@ export function sanitizeGameId(code: string): string {
 
 export function gameLink(gameId: string, origin?: string): string {
   const base = origin ?? (typeof window !== "undefined" ? window.location.origin : "");
-  return `${base}/real/?g=${sanitizeGameId(gameId)}`;
+  return `${base}/real?g=${sanitizeGameId(gameId)}`;
 }
