@@ -76,6 +76,8 @@ export interface Player {
   hands: Hand[];
   activeHandIndex: number;
   currentBet: number;
+  /** Optional profile photo (data URL or remote) for friends tables */
+  avatarUrl?: string;
 }
 
 export interface Dealer {

@@ -6,12 +6,14 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Lock, X } from "lucide-react";
 import type { TableSpot } from "@live-dealr/environments";
+import { playThrowImpact, playThrowLaunch } from "@/lib/chip-sound";
 
 export const EMOTES = [
   { id: "wave", emoji: "👋" },
@@ -89,7 +91,12 @@ export interface SeatTarget {
   seat: number;
   spot: TableSpot;
   isLocal: boolean;
+  /** Seat 0 = dealer face */
+  isDealer?: boolean;
 }
+
+/** Convention: throw target seat for the dealer. */
+export const DEALER_THROW_SEAT = 0;
 
 /**
  * Popover on your avatar: emotes (appear on you) + throwables (drag onto others).
@@ -121,8 +128,31 @@ export function AvatarReactionMenu({
     emoji: string;
     x: number;
     y: number;
+    lockSeat: number | null;
   } | null>(null);
   const dragEmoji = useRef<string | null>(null);
+
+  const findLock = useCallback(
+    (clientX: number, clientY: number): SeatTarget | null => {
+      const px = (clientX / window.innerWidth) * 100;
+      const py = (clientY / window.innerHeight) * 100;
+      let target: SeatTarget | null = null;
+      let best = Number.POSITIVE_INFINITY;
+      for (const seat of seats) {
+        if (seat.isLocal) continue;
+        const dx = (seat.spot.x - px) * (window.innerWidth / 100);
+        const dy = (seat.spot.y - py) * (window.innerHeight / 100);
+        const dist = Math.hypot(dx, dy);
+        const limit = seat.isDealer ? 170 : 130;
+        if (dist < best && dist <= limit) {
+          best = dist;
+          target = seat;
+        }
+      }
+      return target;
+    },
+    [seats],
+  );
 
   useEffect(() => {
     if (!open) {
@@ -149,24 +179,8 @@ export function AvatarReactionMenu({
         return;
       }
 
-      // Nearest non-local seat anchor to the drop point (in viewport %).
-      const px = (clientX / window.innerWidth) * 100;
-      const py = (clientY / window.innerHeight) * 100;
-      let target: SeatTarget | null = null;
-      let best = Number.POSITIVE_INFINITY;
-      for (const seat of seats) {
-        if (seat.isLocal) {
-          continue;
-        }
-        const dx = (seat.spot.x - px) * (window.innerWidth / 100);
-        const dy = (seat.spot.y - py) * (window.innerHeight / 100);
-        const dist = Math.hypot(dx, dy);
-        if (dist < best) {
-          best = dist;
-          target = seat;
-        }
-      }
-      if (!target || best > 110) {
+      const target = findLock(clientX, clientY);
+      if (!target) {
         // Missed drop — dismiss so the popover never feels stuck.
         onClose();
         return;
@@ -174,15 +188,27 @@ export function AvatarReactionMenu({
       onThrow(emoji, target.spot, target.seat);
       onClose();
     },
-    [onClose, onThrow, seats],
+    [findLock, onClose, onThrow],
   );
 
+  const dragging = Boolean(drag);
+
   useEffect(() => {
-    if (!drag) {
+    if (!dragging) {
       return;
     }
     const onMove = (e: PointerEvent) => {
-      setDrag((d) => (d ? { ...d, x: e.clientX, y: e.clientY } : null));
+      const locked = findLock(e.clientX, e.clientY);
+      setDrag((d) =>
+        d
+          ? {
+              ...d,
+              x: e.clientX,
+              y: e.clientY,
+              lockSeat: locked?.seat ?? null,
+            }
+          : null,
+      );
     };
     const onUp = (e: PointerEvent) => {
       e.preventDefault();
@@ -205,19 +231,28 @@ export function AvatarReactionMenu({
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
     };
-  }, [drag, finishDrag]);
+  }, [dragging, finishDrag, findLock]);
 
   function startThrowDrag(emoji: string, e: ReactPointerEvent) {
     e.preventDefault();
     e.stopPropagation();
     dragEmoji.current = emoji;
-    setDrag({ emoji, x: e.clientX, y: e.clientY });
+    const locked = findLock(e.clientX, e.clientY);
+    setDrag({
+      emoji,
+      x: e.clientX,
+      y: e.clientY,
+      lockSeat: locked?.seat ?? null,
+    });
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
       // Some browsers reject capture mid-gesture — window listeners still cover us.
     }
   }
+
+  const lockedSeat = drag?.lockSeat != null ? seats.find((s) => s.seat === drag.lockSeat) : null;
+  const aimTargets = useMemo(() => seats.filter((s) => !s.isLocal), [seats]);
 
   if (!open && !drag) {
     return null;
@@ -282,7 +317,7 @@ export function AvatarReactionMenu({
             )}
           </div>
           <p className="mb-1.5 px-0.5 text-[9px] tracking-[0.18em] text-white/40 uppercase">
-            Throw · drag to player
+            Throw · drag to player or dealer
           </p>
           <div className="grid grid-cols-6 gap-1">
             {THROWABLES.map((item) =>
@@ -304,15 +339,122 @@ export function AvatarReactionMenu({
       ) : null}
 
       {drag ? (
-        <div
-          className="pointer-events-none fixed z-[72] text-3xl drop-shadow-lg"
-          style={{ left: drag.x, top: drag.y, transform: "translate(-50%, -50%)" }}
-        >
-          {drag.emoji}
-        </div>
+        <>
+          {/* Soft aim rings on every valid landing (avatars + dealer) */}
+          {aimTargets.map((seat) => {
+            const locked = seat.seat === drag.lockSeat;
+            return (
+              <div
+                key={seat.seat}
+                className="pointer-events-none fixed z-[71]"
+                style={{
+                  left: `${seat.spot.x}%`,
+                  top: `${seat.spot.y}%`,
+                  transform: "translate(-50%, -50%)",
+                }}
+              >
+                {locked ? (
+                  <SniperLock isDealer={Boolean(seat.isDealer)} />
+                ) : (
+                  <div
+                    className="size-11 rounded-full border border-white/25 bg-white/[0.04]"
+                    style={{ boxShadow: "0 0 0 1px rgba(0,0,0,0.25) inset" }}
+                  />
+                )}
+              </div>
+            );
+          })}
+
+          {/* Thin aim line from throwable → lock */}
+          {lockedSeat ? (
+            <svg className="pointer-events-none fixed inset-0 z-[71] h-full w-full">
+              <line
+                x1={drag.x}
+                y1={drag.y}
+                x2={(lockedSeat.spot.x / 100) * (typeof window !== "undefined" ? window.innerWidth : 0)}
+                y2={(lockedSeat.spot.y / 100) * (typeof window !== "undefined" ? window.innerHeight : 0)}
+                stroke="rgba(240,196,58,0.55)"
+                strokeWidth={1.5}
+                strokeDasharray="4 5"
+              />
+            </svg>
+          ) : null}
+
+          <div
+            className="pointer-events-none fixed z-[72] text-3xl drop-shadow-lg"
+            style={{ left: drag.x, top: drag.y, transform: "translate(-50%, -50%)" }}
+          >
+            {drag.emoji}
+          </div>
+        </>
       ) : null}
     </>,
     document.body,
+  );
+}
+
+/** Corner-bracket sniper reticle that sits on the locked avatar. */
+function SniperLock({ isDealer }: { isDealer: boolean }) {
+  const size = isDealer ? 72 : 56;
+  const arm = Math.round(size * 0.28);
+  const color = "#f0c43a";
+  const corners: Array<CSSProperties> = [
+    { top: 0, left: 0, borderTopWidth: 2, borderLeftWidth: 2 },
+    { top: 0, right: 0, borderTopWidth: 2, borderRightWidth: 2 },
+    { bottom: 0, left: 0, borderBottomWidth: 2, borderLeftWidth: 2 },
+    { bottom: 0, right: 0, borderBottomWidth: 2, borderRightWidth: 2 },
+  ];
+  return (
+    <motion.div
+      className="relative"
+      style={{ width: size, height: size }}
+      initial={{ opacity: 0, scale: 1.25 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ type: "spring", stiffness: 420, damping: 28 }}
+      aria-hidden
+    >
+      <div
+        className="absolute inset-0 rounded-full"
+        style={{
+          boxShadow: `0 0 0 1.5px ${color}66, 0 0 20px ${color}45`,
+          background: `${color}14`,
+        }}
+      />
+      <div
+        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border"
+        style={{
+          width: size * 0.4,
+          height: size * 0.4,
+          borderColor: `${color}bb`,
+        }}
+      />
+      <div
+        className="absolute left-1/2 top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full"
+        style={{ background: color, boxShadow: `0 0 8px ${color}` }}
+      />
+      {corners.map((style, i) => (
+        <div
+          key={i}
+          className="absolute border-solid"
+          style={{
+            width: arm,
+            height: arm,
+            borderColor: color,
+            ...style,
+          }}
+        />
+      ))}
+      <span
+        className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[8px] font-bold tracking-[0.22em] uppercase"
+        style={{
+          top: size + 4,
+          color,
+          textShadow: "0 1px 4px rgba(0,0,0,0.85)",
+        }}
+      >
+        Lock
+      </span>
+    </motion.div>
   );
 }
 
@@ -629,10 +771,13 @@ export function useReactions() {
 
   const spawnThrow = useCallback((emoji: string, from: TableSpot, to: TableSpot) => {
     const id = `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const kind = impactFor(emoji);
+    playThrowLaunch();
     setThrows((prev) => [...prev, { id, emoji, from, to }]);
     window.setTimeout(() => {
       setThrows((prev) => prev.filter((t) => t.id !== id));
-      setImpacts((prev) => [...prev, { id: `i-${id}`, kind: impactFor(emoji), at: to }]);
+      playThrowImpact(kind);
+      setImpacts((prev) => [...prev, { id: `i-${id}`, kind, at: to }]);
       window.setTimeout(() => {
         setImpacts((prev) => prev.filter((i) => i.id !== `i-${id}`));
       }, IMPACT_MS + 100);

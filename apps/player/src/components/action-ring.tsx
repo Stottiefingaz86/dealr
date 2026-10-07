@@ -1,6 +1,7 @@
 "use client";
 
 import type { PlayerActionType } from "@live-dealr/shared-types";
+import { playActionSfx, unlockAudio } from "@/lib/chip-sound";
 
 /** Compact bottom dock — stays clear of the seat pad. */
 export function ActionRing({
@@ -14,6 +15,14 @@ export function ActionRing({
 }) {
   const can = (action: PlayerActionType) => available.includes(action);
 
+  function fire(action: PlayerActionType) {
+    unlockAudio();
+    if (action === "hit" || action === "stand" || action === "double" || action === "split") {
+      playActionSfx(action);
+    }
+    onAction(action);
+  }
+
   return (
     <div
       className={`pointer-events-auto mx-auto flex w-full max-w-md items-center justify-center ${
@@ -26,7 +35,7 @@ export function ActionRing({
         sub="x2"
         color="bg-[#f08a2a]"
         disabled={!can("double")}
-        onClick={() => onAction("double")}
+        onClick={() => fire("double")}
       />
       <ActionButton
         label="Hit"
@@ -34,7 +43,7 @@ export function ActionRing({
         sub="+"
         color="bg-[#2fbf6a]"
         disabled={!can("hit")}
-        onClick={() => onAction("hit")}
+        onClick={() => fire("hit")}
       />
       <ActionButton
         label="Stand"
@@ -42,7 +51,7 @@ export function ActionRing({
         sub="—"
         color="bg-[#e04545]"
         disabled={!can("stand")}
-        onClick={() => onAction("stand")}
+        onClick={() => fire("stand")}
       />
       <ActionButton
         label="Split"
@@ -50,7 +59,7 @@ export function ActionRing({
         sub="∥"
         color="bg-[#3b82f6]"
         disabled={!can("split")}
-        onClick={() => onAction("split")}
+        onClick={() => fire("split")}
       />
     </div>
   );

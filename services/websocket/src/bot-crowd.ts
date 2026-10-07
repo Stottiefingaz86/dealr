@@ -23,15 +23,18 @@ interface CrowdSinks {
   dealerPost: (text: string) => void;
 }
 
-const DEALER_POSTS = [
-  "Follow my profile for clips from tonight's table 🎬",
-  "Game of the week: Lightning Blackjack — it's in my Picks",
-  "New reel is up: three dealer busts in a row 😅",
-  "Tap my name to see tonight's highlights",
+/** Dealer-channel promos — follow CTA, GOTW, clips, schedule. */
+export const DEALER_POSTS = [
+  "Welcome in 👋 Follow my Dealr page for tonight's clips & picks",
+  "Game of the week: Lightning Blackjack — find it in my Picks",
+  "New on my page: three dealer busts in a row 😅 Tap my name",
+  "Follow me for weekly game picks + behind-the-table content",
   "Tips keep the table lively — thank you 💛",
-  "I'm live Wed, Fri and Sat. Follow so you don't miss it",
-  "Followers get my game picks every week",
-  "Big win on the table? It'll be on my page later",
+  "I'm live Wed, Fri & Sat. Follow so you catch the next shoe",
+  "Game of the week announcement is up on my profile →",
+  "Big hand? It'll land on my Dealr page later — follow for the drop",
+  "Tap my name → Follow for reels, highlights & private-table vibes",
+  "Tonight's schedule + picks are on my page. See you there 🎬",
 ];
 
 const IDLE_LINES = [
@@ -101,7 +104,8 @@ export class BotCrowd {
     this.state = initial;
     this.scheduleIdle();
     this.scheduleEmote();
-    this.scheduleDealerPost(20000);
+    // First promo lands fast so chat isn't empty when someone opens it.
+    this.scheduleDealerPost(2500);
   }
 
   stop(): void {
@@ -202,7 +206,8 @@ export class BotCrowd {
   }
 
   private scheduleDealerPost(firstWait?: number): void {
-    const wait = firstWait ?? 55000 + Math.random() * 40000;
+    // ~28–48s between posts — present without drowning player chat.
+    const wait = firstWait ?? 28000 + Math.random() * 20000;
     this.dealerTimer = setTimeout(() => {
       const text = DEALER_POSTS[this.dealerPostIndex % DEALER_POSTS.length];
       this.dealerPostIndex += 1;

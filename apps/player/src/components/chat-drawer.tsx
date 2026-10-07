@@ -78,7 +78,8 @@ export function ChatDrawer({
             <p className="text-sm text-white/40">No messages yet. Say hi to the table.</p>
           ) : (
             messages.map((message) => {
-              const fromDealer = Boolean(dealerId && message.senderId === dealerId);
+              const fromDealer =
+                Boolean(dealerId && message.senderId === dealerId) || message.kind === "system";
               if (fromDealer && onDealerTap) {
                 return (
                   <button
@@ -105,7 +106,12 @@ export function ChatDrawer({
                     bubbleClass(message),
                   )}
                 >
-                  <span className="font-semibold">{message.senderName}</span>
+                  {fromDealer ? (
+                    <span className="mr-1 inline-block size-1.5 -translate-y-px rounded-full bg-[#f0c43a]" />
+                  ) : null}
+                  <span className={cn("font-semibold", fromDealer && "text-[#f0c43a]")}>
+                    {message.senderName}
+                  </span>
                   <span className="text-white/85"> {message.text}</span>
                 </div>
               );

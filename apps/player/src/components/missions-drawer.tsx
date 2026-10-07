@@ -64,7 +64,7 @@ export function MissionsDrawer({
   onOpenChange: (open: boolean) => void;
   book: MissionBook;
   unlocks: ReadonlySet<string>;
-  onClaim: (mission: Mission) => void;
+  onClaim: (mission: Mission, buttonEl?: HTMLElement) => void;
 }) {
   const direction = useDrawerDirection();
   const ready = MISSIONS.filter(
@@ -180,7 +180,12 @@ export function MissionsDrawer({
               </p>
               <ul className="mt-1 divide-y divide-white/8 border-y border-white/8">
                 {ready.map((m) => (
-                  <MissionRow key={m.id} mission={m} book={book} onClaim={() => onClaim(m)} />
+                  <MissionRow
+                    key={m.id}
+                    mission={m}
+                    book={book}
+                    onClaim={(el) => onClaim(m, el)}
+                  />
                 ))}
               </ul>
             </section>
@@ -210,7 +215,7 @@ function MissionRow({
 }: {
   mission: Mission;
   book: MissionBook;
-  onClaim?: () => void;
+  onClaim?: (el: HTMLElement) => void;
 }) {
   const p = book.progress[mission.id];
   const value = Math.min(p?.value ?? 0, mission.target);
@@ -249,7 +254,7 @@ function MissionRow({
       {onClaim ? (
         <button
           type="button"
-          onClick={onClaim}
+          onClick={(e) => onClaim(e.currentTarget)}
           className="h-8 shrink-0 rounded-lg bg-[#f0c43a] px-3 text-[12px] font-semibold text-black transition hover:bg-[#f6d25e] active:scale-95"
         >
           Claim

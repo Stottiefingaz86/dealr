@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { WebsocketModule } from "@live-dealr/websocket";
+import { DealerVoiceController } from "./dealer-voice.controller";
 import { HealthController } from "./health.controller";
 import { LayoutController } from "./layout.controller";
 import { MediaController } from "./media.controller";
@@ -16,6 +17,7 @@ import { WalletController } from "./wallet.controller";
     MediaController,
     ShoeSimulatorController,
     WalletController,
+    DealerVoiceController,
   ],
 })
 export class AppModule {}

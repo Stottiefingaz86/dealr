@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { MessageSquare, PenLine, RotateCcw, SlidersHorizontal, Undo2 } from "lucide-react";
+import { Check, MessageSquare, PenLine, RotateCcw, SlidersHorizontal, Undo2 } from "lucide-react";
 import {
   CHIP_VALUES,
   DEFAULT_PLAYER_ID,
@@ -31,7 +31,12 @@ import { AtmosphereDrawer } from "./atmosphere-drawer";
 import { MissionsButton, MissionsDrawer } from "./missions-drawer";
 import { WinConfetti } from "./win-confetti";
 import { PlayerMenu } from "./player-menu";
-import { AvatarReactionMenu, ReactionLayer, useReactions } from "./reactions";
+import {
+  AvatarReactionMenu,
+  DEALER_THROW_SEAT,
+  ReactionLayer,
+  useReactions,
+} from "./reactions";
 import { useTableSocket } from "@/lib/use-table-socket";
 import { useCountdown } from "@/lib/use-countdown";
 import { useAnchorSpots } from "@/lib/use-anchor-spots";
@@ -39,20 +44,56 @@ import { usePlayerStore } from "@/lib/store";
 import { formatMoney } from "@/lib/chips";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { setSfxLevels } from "@/lib/sfx-levels";
-import { playSocialPop } from "@/lib/chip-sound";
-import { playCountdownTick, playRewardClaim, playTurnChime } from "@/lib/turn-sound";
+import {
+  playBetConfirm,
+  playSocialPop,
+  playChipPlace,
+  preloadChipSfx,
+  unlockAudio,
+} from "@/lib/chip-sound";
+import { fireClaimConfetti } from "@/lib/confetti";
+import {
+  playCountdownTick,
+  playTurnChime,
+  preloadRewardClaim,
+} from "@/lib/turn-sound";
 import { ensureAmbience } from "@/lib/music";
-import { playChipPlace, unlockAudio } from "@/lib/chip-sound";
 import { playCardDeal } from "@/lib/card-sound";
+import { playGoodEvening, playPlaceYourBets, preloadDealerTalk } from "@/lib/dealer-talk";
+import { speakHandTotal, speakRewardCongrats, speakTipThanks } from "@/lib/dealer-voice";
 
 type ActionBurst = { action: PlayerActionType; id: string };
 
 /** Push the seat dock below the tag anchor so it clears the bet pad. */
 const DOCK_DROP_PX = 26;
 
-export function TableExperience() {
-  const { addChip, clearBet, sendAction, follow, sendChat, tip, sendReaction, claimReward } =
-    useTableSocket();
+export type TableExperienceProps = {
+  /** Override for live/friends tables where your id isn't the demo DEFAULT_PLAYER_ID. */
+  playerId?: string;
+  actions?: ReturnType<typeof useTableSocket>;
+  /** Friends table handles its own join greets — skip the solo once-per-tab line. */
+  skipJoinGreet?: boolean;
+};
+
+export function TableExperience({
+  playerId: playerIdProp,
+  actions,
+  skipJoinGreet = false,
+}: TableExperienceProps = {}) {
+  const socketActions = useTableSocket({ enabled: !actions });
+  const {
+    addChip,
+    clearBet,
+    confirmBet,
+    sendAction,
+    follow,
+    sendChat,
+    tip,
+    sendReaction,
+    claimReward,
+    playerId: socketPlayerId,
+  } = actions ?? socketActions;
+  const localPlayerId = playerIdProp ?? socketPlayerId ?? DEFAULT_PLAYER_ID;
   const [feedStatus, setFeedStatus] = useState<FeedStatus>("idle");
   const dealerSources = process.env.NEXT_PUBLIC_DEALER_STREAM_URL
     ? [process.env.NEXT_PUBLIC_DEALER_STREAM_URL]
@@ -83,7 +124,24 @@ export function TableExperience() {
   // Lounge track on by default — browsers need a gesture, so we arm immediately and retry on first tap.
   useEffect(() => {
     ensureAmbience();
-  }, []);
+    preloadDealerTalk();
+    void preloadChipSfx();
+    preloadRewardClaim();
+    if (skipJoinGreet) return;
+    playGoodEvening();
+    const armVoice = () => {
+      unlockAudio();
+      playGoodEvening();
+      window.removeEventListener("pointerdown", armVoice);
+      window.removeEventListener("keydown", armVoice);
+    };
+    window.addEventListener("pointerdown", armVoice, { once: true });
+    window.addEventListener("keydown", armVoice, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", armVoice);
+      window.removeEventListener("keydown", armVoice);
+    };
+  }, [skipJoinGreet]);
   const [actionBursts, setActionBursts] = useState<Record<string, ActionBurst>>({});
   const [friends, setFriends] = useState<Set<string>>(() => new Set());
   const [playerMenu, setPlayerMenu] = useState<{
@@ -96,8 +154,21 @@ export function TableExperience() {
   const dealerVideoRef = useRef<HTMLVideoElement>(null);
   const reactions = useReactions();
 
+  const seenHandVoice = useRef(new Set<string>());
   useEffect(() => {
+    const me = usePlayerStore.getState().state?.players.find((p) => p.id === localPlayerId);
     for (const event of events) {
+      if (event.type === "HAND_COMPLETED" && !seenHandVoice.current.has(event.id)) {
+        seenHandVoice.current.add(event.id);
+        // Only call the local player's finished hand — avoids a chorus of bot totals.
+        const handId = event.payload.handId;
+        const isMine = me?.hands.some((h) => h.id === handId);
+        if (isMine || event.payload.owner === "dealer") {
+          const { isBust, isBlackjack, total } = event.payload;
+          const label = isBust ? "BUST" : isBlackjack ? "BJ" : String(total);
+          void speakHandTotal(label);
+        }
+      }
       if (event.type !== "PLAYER_ACTION_RECEIVED") {
         continue;
       }
@@ -118,7 +189,7 @@ export function TableExperience() {
         });
       }, 1900);
     }
-  }, [events]);
+  }, [events, localPlayerId]);
 
   const playersBySeat = useMemo(() => {
     const map = new Map<number, Player>();
@@ -129,8 +200,8 @@ export function TableExperience() {
   }, [state?.players]);
 
   const localPlayer =
+    state?.players.find((player) => player.id === localPlayerId) ??
     playersBySeat.get(1) ??
-    state?.players.find((player) => player.id === DEFAULT_PLAYER_ID) ??
     state?.players[0];
   const playerHand = localPlayer?.hands[0];
   const dealerHand = state?.dealer.hand;
@@ -180,6 +251,15 @@ export function TableExperience() {
     }
   }, [roundId, phase, result, localPlayer, signalMission]);
 
+  // Dealer: "place your bets" every time betting opens
+  const wasBetting = useRef(false);
+  useEffect(() => {
+    if (betting && !wasBetting.current) {
+      playPlaceYourBets();
+    }
+    wasBetting.current = betting;
+  }, [betting]);
+
   // Heads-up chime the moment the action passes to you
   useEffect(() => {
     if (isMyTurn) playTurnChime();
@@ -215,12 +295,13 @@ export function TableExperience() {
     addChip(selectedChip);
   }
 
+  const localSeat = localPlayer?.seat ?? 1;
   const sceneSeats: SceneSeat[] = [1, 2, 3, 4, 5].flatMap((seat) => {
     const seated = playersBySeat.get(seat);
-    if (!seated && seat !== 1) {
+    if (!seated && seat !== localSeat) {
       return [];
     }
-    const isLocal = seated?.id === DEFAULT_PLAYER_ID || seat === 1;
+    const isLocal = seated?.id === localPlayerId || (!seated && seat === localSeat);
     const player = seated ?? localPlayer;
     const hand = player?.hands[0];
     const acting = Boolean(
@@ -230,6 +311,7 @@ export function TableExperience() {
       {
         seat,
         displayName: player?.displayName ?? (isLocal ? "You" : null),
+        avatarUrl: player?.avatarUrl,
         isLocal,
         chips: player?.chipStack ?? [],
         bet: player?.currentBet ?? 0,
@@ -260,11 +342,19 @@ export function TableExperience() {
   // Screen-space anchors (measured through the 3D plane) for menus + throws
   const anchorSpots = useAnchorSpots(mainRef, sceneSeats.length);
   const localSpot = anchorSpots[1] ?? { x: 50, y: 80 };
-  const seatTargets = sceneSeats.map((s) => ({
-    seat: s.seat,
-    spot: anchorSpots[s.seat] ?? { x: 50, y: 70 },
-    isLocal: s.isLocal,
-  }));
+  const seatTargets = [
+    {
+      seat: DEALER_THROW_SEAT,
+      spot: anchorSpots[DEALER_THROW_SEAT] ?? { x: 50, y: 22 },
+      isLocal: false,
+      isDealer: true,
+    },
+    ...sceneSeats.map((s) => ({
+      seat: s.seat,
+      spot: anchorSpots[s.seat] ?? { x: 50, y: 70 },
+      isLocal: s.isLocal,
+    })),
+  ];
   const menuPlayerSpot = playerMenu ? (anchorSpots[playerMenu.seat] ?? null) : null;
 
   // Play reactions from the rest of the room (ours are rendered locally when sent).
@@ -273,7 +363,7 @@ export function TableExperience() {
   anchorRef.current = anchorSpots;
   useEffect(() => {
     for (const reaction of roomReactions) {
-      if (seenReactions.current.has(reaction.id) || reaction.senderId === DEFAULT_PLAYER_ID) {
+      if (seenReactions.current.has(reaction.id) || reaction.senderId === localPlayerId) {
         continue;
       }
       seenReactions.current.add(reaction.id);
@@ -285,13 +375,16 @@ export function TableExperience() {
         playSocialPop(1.5);
         reactions.spawnEmote(reaction.emoji, from);
       } else if (reaction.toSeat !== null) {
-        const to = anchorRef.current[reaction.toSeat];
+        const to =
+          reaction.toSeat === DEALER_THROW_SEAT
+            ? (anchorRef.current[DEALER_THROW_SEAT] ?? { x: 50, y: 22 })
+            : anchorRef.current[reaction.toSeat];
         if (to) {
           reactions.spawnThrow(reaction.emoji, from, to);
         }
       }
     }
-  }, [roomReactions, reactions.spawnEmote, reactions.spawnThrow]);
+  }, [roomReactions, localPlayerId, reactions.spawnEmote, reactions.spawnThrow]);
 
   return (
     <main ref={mainRef} className="relative min-h-dvh overflow-clip bg-black text-foreground">
@@ -347,7 +440,6 @@ export function TableExperience() {
               signalMission({ type: "reaction" });
             }}
             onThrow={(emoji, to, toSeat) => {
-              playSocialPop(0.9);
               reactions.spawnThrow(emoji, localSpot, to);
               sendReaction("throw", emoji, toSeat);
               signalMission({ type: "reaction" });
@@ -458,17 +550,32 @@ export function TableExperience() {
               </DockButton>
             }
             trailing={
-              <DockButton
-                label="Double bet"
-                onClick={() => {
-                  for (const chip of chips) {
-                    addChip(chip);
-                  }
-                }}
-                disabled={totalBet === 0}
-              >
-                <span className="text-[11px] font-bold">2×</span>
-              </DockButton>
+              <>
+                <DockButton
+                  label="Double bet"
+                  onClick={() => {
+                    for (const chip of chips) {
+                      addChip(chip);
+                    }
+                  }}
+                  disabled={totalBet === 0}
+                >
+                  <span className="text-[11px] font-bold">2×</span>
+                </DockButton>
+                <DockButton
+                  label="Confirm bet"
+                  onClick={() => {
+                    unlockAudio();
+                    playBetConfirm();
+                    confirmBet();
+                  }}
+                  disabled={totalBet < 1}
+                  accent
+                  pulse={totalBet >= 1}
+                >
+                  <Check className="size-4" strokeWidth={2.5} />
+                </DockButton>
+              </>
             }
           >
             <span
@@ -547,15 +654,28 @@ export function TableExperience() {
         onOpenChange={(open) => setPanel(open ? "rewards" : "none")}
         book={missions}
         unlocks={unlocks}
-        onClaim={(mission) => {
+        onClaim={(mission, buttonEl) => {
           claimMission(mission.id);
+          const amount = mission.reward.kind === "cashback" ? mission.reward.amount : 0;
+          const unlockLabel =
+            mission.reward.kind === "cashback" ? undefined : mission.reward.label;
           claimReward({
             missionId: mission.id,
             missionTitle: mission.title,
-            amount: mission.reward.kind === "cashback" ? mission.reward.amount : 0,
-            unlockLabel: mission.reward.kind === "cashback" ? undefined : mission.reward.label,
+            amount,
+            unlockLabel,
           });
-          playRewardClaim();
+          unlockAudio();
+          // Sound comes from fireClaimConfetti → playRedeemSfx (once, soft).
+          fireClaimConfetti(buttonEl);
+          window.setTimeout(() => {
+            void speakRewardCongrats({
+              name: localPlayer?.displayName,
+              missionTitle: mission.title,
+              amount,
+              unlockLabel,
+            });
+          }, 450);
         }}
       />
 
@@ -574,6 +694,10 @@ export function TableExperience() {
           onTip={(amount) => {
             tip(amount);
             signalMission({ type: "tip", amount });
+            void speakTipThanks({
+              name: localPlayer?.displayName,
+              amount,
+            });
           }}
         />
       ) : null}
@@ -681,11 +805,15 @@ function DockButton({
   disabled,
   label,
   children,
+  accent = false,
+  pulse = false,
 }: {
   onClick: () => void;
   disabled?: boolean;
   label: string;
   children: React.ReactNode;
+  accent?: boolean;
+  pulse?: boolean;
 }) {
   return (
     <button
@@ -693,9 +821,19 @@ function DockButton({
       aria-label={label}
       onClick={onClick}
       disabled={disabled}
-      className="flex size-8 items-center justify-center rounded-full border border-white/15 bg-[#0d0d13] text-white/80 shadow-[0_10px_24px_rgba(0,0,0,0.5)] hover:bg-white/10 disabled:opacity-30 sm:size-9"
+      className={`relative flex size-8 items-center justify-center rounded-full border shadow-[0_10px_24px_rgba(0,0,0,0.5)] disabled:opacity-30 sm:size-9 ${
+        accent
+          ? "border-[#3dce6a]/90 bg-[#2fbf5b] text-black hover:brightness-110"
+          : "border-white/15 bg-[#0d0d13] text-white/80 hover:bg-white/10"
+      } ${pulse && !disabled ? "animate-[dealr-confirm-pulse_1.6s_ease-in-out_infinite]" : ""}`}
     >
-      {children}
+      {pulse && !disabled ? (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 rounded-full bg-[#2fbf5b]/45 animate-[dealr-confirm-ring_1.6s_ease-out_infinite]"
+        />
+      ) : null}
+      <span className="relative z-[1]">{children}</span>
     </button>
   );
 }

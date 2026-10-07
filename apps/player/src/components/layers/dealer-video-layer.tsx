@@ -157,6 +157,12 @@ export function DealerVideoLayer({
               filter: "contrast(1.04) saturate(1.05) drop-shadow(0 18px 30px rgba(0,0,0,0.55))",
             }}
           />
+          {/* Invisible throw target on her face / upper torso */}
+          <div
+            data-seat-anchor={0}
+            className="pointer-events-none absolute left-1/2 top-[18%] h-[28%] w-[22%] -translate-x-1/2"
+            aria-hidden
+          />
         </div>
       ) : null}
 

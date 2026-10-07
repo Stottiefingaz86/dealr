@@ -22,7 +22,28 @@ import { resolveApiUrl } from "./api";
 import { DemoTable } from "./demo-table";
 import { usePlayerStore } from "./store";
 
-export function useTableSocket() {
+const API_FALLBACK_MS = 1500;
+
+function startDemo(
+  sinks: ConstructorParameters<typeof DemoTable>[0],
+  demoRef: { current: DemoTable | null },
+  setConnected: (v: boolean) => void,
+  setChat: (m: ChatMessage[]) => void,
+) {
+  const demo = new DemoTable(sinks);
+  demoRef.current = demo;
+  setConnected(true);
+  setChat([]);
+  demo.start();
+  return () => {
+    demo.stop();
+    demoRef.current = null;
+    setConnected(false);
+  };
+}
+
+export function useTableSocket(opts?: { enabled?: boolean }) {
+  const enabled = opts?.enabled ?? true;
   const socketRef = useRef<Socket | null>(null);
   const demoRef = useRef<DemoTable | null>(null);
   const setConnected = usePlayerStore((s) => s.setConnected);
@@ -34,33 +55,45 @@ export function useTableSocket() {
   const pushReaction = usePlayerStore((s) => s.pushReaction);
 
   useEffect(() => {
+    if (!enabled) return;
+
     const apiUrl = resolveApiUrl();
+    const sinks = {
+      onState: setState,
+      onEvent: (event: Parameters<typeof appendEvent>[0]) => {
+        if (event.type !== "GAME_STATE_UPDATED") appendEvent(event);
+      },
+      onChat: appendChat,
+      onReaction: pushReaction,
+    };
 
     // Production static host (or missing API) → run the full table in the browser.
     if (!apiUrl) {
-      const demo = new DemoTable({
-        onState: setState,
-        onEvent: (event) => {
-          if (event.type !== "GAME_STATE_UPDATED") appendEvent(event);
-        },
-        onChat: appendChat,
-        onReaction: pushReaction,
-      });
-      demoRef.current = demo;
-      setConnected(true);
-      setChat([]);
-      demo.start();
-      return () => {
-        demo.stop();
-        demoRef.current = null;
-        setConnected(false);
-      };
+      return startDemo(sinks, demoRef, setConnected, setChat);
     }
 
     const socket = createRealtimeSocket(apiUrl);
     socketRef.current = socket;
+    let cancelled = false;
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+    let stopDemo: (() => void) | null = null;
+    let usingDemo = false;
+
+    const goDemo = () => {
+      if (cancelled || usingDemo) return;
+      usingDemo = true;
+      socket.disconnect();
+      socketRef.current = null;
+      stopDemo = startDemo(sinks, demoRef, setConnected, setChat);
+    };
+
+    fallbackTimer = setTimeout(() => {
+      if (!socket.connected) goDemo();
+    }, API_FALLBACK_MS);
 
     socket.on("connect", () => {
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      if (usingDemo) return;
       setConnected(true);
       socket.emit(ClientEvents.joinTable, {
         tableId: DEFAULT_TABLE_ID,
@@ -68,7 +101,12 @@ export function useTableSocket() {
         playerId: DEFAULT_PLAYER_ID,
       });
     });
-    socket.on("disconnect", () => setConnected(false));
+    socket.on("connect_error", () => {
+      goDemo();
+    });
+    socket.on("disconnect", () => {
+      if (!usingDemo) setConnected(false);
+    });
     socket.on(ServerEvents.tableState, (message: TableStateMessage) => {
       setState(message.state);
     });
@@ -91,12 +129,16 @@ export function useTableSocket() {
     });
 
     return () => {
+      cancelled = true;
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      stopDemo?.();
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [appendChat, appendEvent, pushReaction, setChat, setConnected, setEvents, setState]);
+  }, [enabled, appendChat, appendEvent, pushReaction, setChat, setConnected, setEvents, setState]);
 
   return {
+    playerId: DEFAULT_PLAYER_ID,
     addChip: (value: number) => {
       if (demoRef.current) {
         demoRef.current.addChip(value);
@@ -114,6 +156,15 @@ export function useTableSocket() {
         return;
       }
       socketRef.current?.emit(ClientEvents.clearBet, { playerId: DEFAULT_PLAYER_ID });
+    },
+    confirmBet: () => {
+      if (demoRef.current) {
+        demoRef.current.confirmBet();
+        return;
+      }
+      socketRef.current?.emit(ClientEvents.closeBetting, {
+        tableId: DEFAULT_TABLE_ID,
+      });
     },
     sendAction: (action: PlayerActionType) => {
       if (demoRef.current) {
@@ -196,3 +247,5 @@ export function useTableSocket() {
     },
   };
 }
+
+export type TableActions = ReturnType<typeof useTableSocket>;

@@ -137,6 +137,13 @@ export class DemoTable {
     this.runtime.clearBet(DEFAULT_PLAYER_ID);
   }
 
+  /** Lock chips and deal now (skip the rest of the betting clock). */
+  confirmBet(): void {
+    const me = this.runtime.getState().players.find((p) => p.id === DEFAULT_PLAYER_ID);
+    if (!me || me.currentBet < 1) return;
+    this.runtime.closeBetting();
+  }
+
   sendAction(action: PlayerActionType): void {
     this.runtime.submitPlayerAction(DEFAULT_PLAYER_ID, action);
   }

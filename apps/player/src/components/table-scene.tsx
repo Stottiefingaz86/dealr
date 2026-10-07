@@ -75,6 +75,7 @@ export function seatGeometry(seat: number) {
 export interface SceneSeat {
   seat: number;
   displayName: string | null;
+  avatarUrl?: string | null;
   isLocal: boolean;
   chips: ChipValue[];
   bet: number;
@@ -219,7 +220,12 @@ function OffscreenSeats({
         seat.isActing ? "border-[#f0c43a]/70" : "border-white/12"
       }`}
     >
-      <PlayerAvatar name={seat.displayName ?? "?"} isActing={seat.isActing} size={20} />
+      <PlayerAvatar
+        name={seat.displayName ?? "?"}
+        src={seat.avatarUrl}
+        isActing={seat.isActing}
+        size={20}
+      />
       <span className="text-[10px] font-medium text-white/85">{seat.displayName}</span>
       {seat.handTotal ? (
         <span className="rounded-full bg-[#1f8f4e] px-1.5 text-[10px] font-bold tabular-nums text-white">
@@ -930,6 +936,7 @@ function Seat({
               </AnimatePresence>
               <PlayerAvatar
                 name={name || "?"}
+                src={model.avatarUrl}
                 isLocal={model.isLocal}
                 isActing={model.isActing}
                 size={28}

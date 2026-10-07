@@ -19,18 +19,19 @@ function hashName(name: string): number {
 
 export function PlayerAvatar({
   name,
+  src,
   isLocal = false,
   isActing = false,
   size = 44,
 }: {
   name: string;
+  src?: string | null;
   isLocal?: boolean;
   isActing?: boolean;
   size?: number;
 }) {
   const palette = PALETTE[hashName(name) % PALETTE.length]!;
   const initial = name.trim().charAt(0).toUpperCase() || "?";
-  // While acting the TurnOrb draws the ring — keep the avatar edge quiet.
   const ring = isActing
     ? "rgba(0,0,0,0.6)"
     : isLocal
@@ -44,31 +45,30 @@ export function PlayerAvatar({
         width: size,
         height: size,
         boxShadow: `0 0 0 1.5px ${ring}, 0 6px 16px rgba(0,0,0,0.5)`,
-        background: isLocal
-          ? "linear-gradient(160deg, #2a2418, #0c0c10)"
-          : `linear-gradient(160deg, ${palette[0]}, #0a0a0e)`,
+        background: src
+          ? "#0c0c10"
+          : isLocal
+            ? "linear-gradient(160deg, #2a2418, #0c0c10)"
+            : `linear-gradient(160deg, ${palette[0]}, #0a0a0e)`,
       }}
     >
-      <div className="flex size-full items-center justify-center">
-        {isLocal ? (
-          <svg
-            viewBox="0 0 24 24"
-            fill="#f0c43a"
-            className="size-[52%]"
-            aria-hidden
-          >
-            <circle cx="12" cy="8" r="3.2" />
-            <path d="M5.5 18.5c0-3.1 2.9-5.4 6.5-5.4s6.5 2.3 6.5 5.4" />
-          </svg>
-        ) : (
-          <span
-            className="font-semibold"
-            style={{ fontSize: size * 0.34, color: palette[1] }}
-          >
-            {initial}
-          </span>
-        )}
-      </div>
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt="" className="size-full object-cover" draggable={false} />
+      ) : (
+        <div className="flex size-full items-center justify-center">
+          {isLocal ? (
+            <svg viewBox="0 0 24 24" fill="#f0c43a" className="size-[52%]" aria-hidden>
+              <circle cx="12" cy="8" r="3.2" />
+              <path d="M5.5 18.5c0-3.1 2.9-5.4 6.5-5.4s6.5 2.3 6.5 5.4" />
+            </svg>
+          ) : (
+            <span className="font-semibold" style={{ fontSize: size * 0.34, color: palette[1] }}>
+              {initial}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

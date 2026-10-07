@@ -60,6 +60,8 @@ function isBot(playerId: string): boolean {
   return playerId.startsWith("bot-");
 }
 
+export type TableMode = "demo" | "live";
+
 export class TableRuntime {
   private state: GameState;
   private sequence = 0;
@@ -75,11 +77,14 @@ export class TableRuntime {
   private botActionTimer: ReturnType<typeof setTimeout> | null = null;
   /** Players still to act this round (seat order). */
   private actionQueue: string[] = [];
+  private readonly mode: TableMode;
 
   constructor(
     private readonly store: InMemoryEventStore,
     tableId = DEFAULT_TABLE_ID,
+    mode: TableMode = "demo",
   ) {
+    this.mode = mode;
     this.state = this.createInitialState(tableId);
   }
 
@@ -94,6 +99,75 @@ export class TableRuntime {
   subscribe(listener: TableListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /**
+   * Seat a human at the next free chair (1–5). Live tables start empty;
+   * reclaiming the same playerId returns their existing seat.
+   */
+  claimSeat(
+    displayName: string,
+    playerId = crypto.randomUUID(),
+    avatarUrl?: string,
+  ): Player {
+    const existing = this.state.players.find((p) => p.id === playerId);
+    if (existing) {
+      existing.displayName = displayName.trim() || existing.displayName;
+      if (avatarUrl !== undefined) existing.avatarUrl = avatarUrl || undefined;
+      this.publishState();
+      return structuredClone(existing);
+    }
+    if (this.state.players.filter((p) => !isBot(p.id)).length >= 5) {
+      throw new Error("Table is full (5 players max)");
+    }
+    const taken = new Set(this.state.players.map((p) => p.seat));
+    let seat = 0;
+    for (let i = 1; i <= 5; i++) {
+      if (!taken.has(i)) {
+        seat = i;
+        break;
+      }
+    }
+    if (!seat) {
+      // Replace a bot if any remain (demo → live transition)
+      const bot = this.state.players.find((p) => isBot(p.id));
+      if (bot) {
+        bot.id = playerId;
+        bot.displayName = displayName.trim() || "Player";
+        bot.avatarUrl = avatarUrl || undefined;
+        bot.demoCredits = STARTING_CREDITS;
+        bot.chipStack = [];
+        bot.hands = [];
+        bot.activeHandIndex = 0;
+        bot.currentBet = 0;
+        this.publishState();
+        return structuredClone(bot);
+      }
+      throw new Error("Table is full (5 players max)");
+    }
+    const player: Player = {
+      id: playerId,
+      displayName: displayName.trim() || "Player",
+      seat,
+      demoCredits: STARTING_CREDITS,
+      chipStack: [],
+      hands: [],
+      activeHandIndex: 0,
+      currentBet: 0,
+      avatarUrl: avatarUrl || undefined,
+    };
+    this.state.players = [...this.state.players, player].sort((a, b) => a.seat - b.seat);
+    this.publishState();
+    return structuredClone(player);
+  }
+
+  releaseSeat(playerId: string): void {
+    if (isBot(playerId)) return;
+    const before = this.state.players.length;
+    this.state.players = this.state.players.filter((p) => p.id !== playerId);
+    if (this.state.players.length !== before) {
+      this.publishState();
+    }
   }
 
   open(): void {
@@ -142,7 +216,9 @@ export class TableRuntime {
     this.emit("BETTING_OPENED", { minBet: MIN_BET, maxBet: MAX_BET });
     this.refreshInstruction();
     this.publishState();
-    this.scheduleBotBets();
+    if (this.mode === "demo") {
+      this.scheduleBotBets();
+    }
     this.bettingTimer = setTimeout(() => {
       this.closeBetting();
     }, BETTING_SECONDS * 1000);
@@ -527,6 +603,14 @@ export class TableRuntime {
       return;
     }
 
+    // Twenty-one — no need to stand; hand is done.
+    if (hand.total >= 21 || hand.isBlackjack) {
+      hand.isStood = true;
+      this.completePlayerHand(hand);
+      this.advanceActionQueue();
+      return;
+    }
+
     // Hit mid-turn — re-prompt same player
     this.promptPlayer(playerId);
   }
@@ -576,10 +660,11 @@ export class TableRuntime {
     }
     this.state.dealer.hand = refreshHand(this.state.dealer.hand);
 
-    // Skip blackjacks — auto-complete
+    // Skip blackjacks / twenty-ones — auto-complete
     this.actionQueue = this.actionQueue.filter((id) => {
       const hand = this.requirePlayer(id).hands[0];
-      if (hand?.isBlackjack) {
+      if (hand && (hand.isBlackjack || hand.total >= 21)) {
+        hand.isStood = true;
         this.completePlayerHand(hand);
         return false;
       }
@@ -597,7 +682,18 @@ export class TableRuntime {
       return;
     }
     const hand = this.requirePlayer(nextId).hands[0];
-    if (!hand || hand.isResolved || hand.isBlackjack || hand.isBust || hand.isStood) {
+    if (
+      !hand ||
+      hand.isResolved ||
+      hand.isBlackjack ||
+      hand.isBust ||
+      hand.isStood ||
+      hand.total >= 21
+    ) {
+      if (hand && !hand.isResolved && hand.total >= 21) {
+        hand.isStood = true;
+        this.completePlayerHand(hand);
+      }
       this.advanceActionQueue();
       return;
     }
@@ -608,6 +704,13 @@ export class TableRuntime {
     const player = this.requirePlayer(playerId);
     const hand = player.hands[0];
     if (!hand) {
+      this.advanceActionQueue();
+      return;
+    }
+
+    if (hand.total >= 21 || hand.isBlackjack) {
+      hand.isStood = true;
+      this.completePlayerHand(hand);
       this.advanceActionQueue();
       return;
     }
@@ -895,10 +998,32 @@ export class TableRuntime {
 
   private createInitialState(tableId: string): GameState {
     const dealerProfile = getDemoDealer();
+    const demoPlayers: Player[] = [
+      {
+        id: DEFAULT_PLAYER_ID,
+        displayName: "You",
+        seat: 1,
+        demoCredits: STARTING_CREDITS,
+        chipStack: [],
+        hands: [],
+        activeHandIndex: 0,
+        currentBet: 0,
+      },
+      ...TABLEMATES.map((mate) => ({
+        id: mate.id,
+        displayName: mate.displayName,
+        seat: mate.seat,
+        demoCredits: STARTING_CREDITS,
+        chipStack: [] as ChipValue[],
+        hands: [],
+        activeHandIndex: 0,
+        currentBet: 0,
+      })),
+    ];
     return {
       table: {
         id: tableId,
-        name: "Live Blackjack — Private Table",
+        name: this.mode === "live" ? "Friends table" : "Live Blackjack — Private Table",
         phase: "closed",
         paused: false,
       },
@@ -914,28 +1039,7 @@ export class TableRuntime {
         profile: dealerProfile,
         hand: createEmptyHand("dealer-idle", "dealer"),
       },
-      players: [
-        {
-          id: DEFAULT_PLAYER_ID,
-          displayName: "You",
-          seat: 1,
-          demoCredits: STARTING_CREDITS,
-          chipStack: [],
-          hands: [],
-          activeHandIndex: 0,
-          currentBet: 0,
-        },
-        ...TABLEMATES.map((mate) => ({
-          id: mate.id,
-          displayName: mate.displayName,
-          seat: mate.seat,
-          demoCredits: STARTING_CREDITS,
-          chipStack: [] as ChipValue[],
-          hands: [],
-          activeHandIndex: 0,
-          currentBet: 0,
-        })),
-      ],
+      players: this.mode === "live" ? [] : demoPlayers,
       availableActions: [],
       dealerInstruction: { kind: "waiting_for_player", label: "WAITING" },
       lastSettlements: [],
