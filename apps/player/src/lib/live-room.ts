@@ -22,17 +22,68 @@ import { DEALER_POSTS } from "@live-dealr/websocket/bot-crowd";
 
 const AUTO_DEAL_MS = 550;
 const PEER_PREFIX = "dealr-live-";
+/** Drop incomplete guest handshakes so a hung ICE attempt doesn't burn a PeerJS slot. */
+const HELLO_TIMEOUT_MS = 12000;
+const JOIN_ATTEMPTS = 5;
+const JOIN_TIMEOUT_MS = 10000;
 
-/** STUN helps friends behind home NATs (3rd+ join was failing on default PeerJS). */
+/**
+ * STUN alone fails for many 3rd+ joins (cellular / symmetric NAT). Open Relay TURN
+ * relays those paths — PeerJS cloud no longer ships a default TURN.
+ * @see https://www.metered.ca/tools/openrelay/
+ */
 const PEER_OPTS = {
   debug: 0 as const,
   config: {
     iceServers: [
       { urls: "stun:stun.l.google.com:19302" },
       { urls: "stun:stun1.l.google.com:19302" },
+      { urls: "stun:stun.relay.metered.ca:80" },
+      {
+        urls: "turn:openrelay.metered.ca:80",
+        username: "openrelayproject",
+        credential: "openrelayproject",
+      },
+      {
+        urls: "turn:openrelay.metered.ca:443",
+        username: "openrelayproject",
+        credential: "openrelayproject",
+      },
+      {
+        urls: "turn:openrelay.metered.ca:443?transport=tcp",
+        username: "openrelayproject",
+        credential: "openrelayproject",
+      },
     ],
   },
 };
+
+function wireAvatar(url?: string): string | undefined {
+  if (!url) return undefined;
+  // PeerJS data messages choke on huge payloads; avatars are already compressed.
+  return url.length > 48_000 ? undefined : url;
+}
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+}
+
+function isRetryablePeerError(err: { type?: string; message?: string }): boolean {
+  const type = (err.type ?? "").toLowerCase();
+  const message = (err.message ?? "").toLowerCase();
+  if (type === "browser-incompatible" || type === "invalid-id") return false;
+  if (type === "unavailable-id") return false;
+  // peer-unavailable / network / server-error / webrtc — try again
+  return (
+    type === "peer-unavailable" ||
+    type === "network" ||
+    type === "server-error" ||
+    type === "webrtc" ||
+    message.includes("could not connect") ||
+    message.includes("lost connection") ||
+    message.includes("negotiation")
+  );
+}
 
 export function peerIdForRoom(code: string): string {
   return `${PEER_PREFIX}${code.toLowerCase()}`;
@@ -115,15 +166,24 @@ export class LiveHost {
     await new Promise<void>((resolve, reject) => {
       const peer = new Peer(peerIdForRoom(this.roomCode), PEER_OPTS);
       this.peer = peer;
+      let opened = false;
       peer.on("open", () => {
+        opened = true;
         this.sinks.onStatus("Table live — share the link");
         this.runtime!.openBetting();
         this.scheduleDealerPromo(2500);
         resolve();
       });
       peer.on("error", (err) => {
-        this.sinks.onError(err.message || "Could not open table (code taken?)");
-        reject(err);
+        // After open, a single guest ICE failure must not tear down the table.
+        if (!opened) {
+          this.sinks.onError(err.message || "Could not open table (code taken?)");
+          reject(err);
+          return;
+        }
+        if (!isRetryablePeerError(err)) {
+          this.sinks.onError(err.message || "Table link error");
+        }
       });
       peer.on("connection", (conn) => this.onGuest(conn));
     });
@@ -160,15 +220,36 @@ export class LiveHost {
   }
 
   private onGuest(conn: DataConnection) {
-    // Accept immediately — PeerJS can drop the 3rd link if we wait to wire handlers.
-    conn.on("data", (raw) => this.onGuestMessage(conn, raw as LiveWire));
+    // Wire handlers immediately — waiting for `open` drops some mobile/NAT guests.
+    let seatedId: string | null = null;
+    const helloTimer = window.setTimeout(() => {
+      if (seatedId) return;
+      try {
+        conn.close();
+      } catch {
+        /* ignore */
+      }
+    }, HELLO_TIMEOUT_MS);
+
+    conn.on("data", (raw) => {
+      const msg = raw as LiveWire;
+      if (msg.t === "hello" && !seatedId) {
+        window.clearTimeout(helloTimer);
+        seatedId = this.acceptHello(conn, msg) ? msg.playerId : null;
+        return;
+      }
+      this.onGuestMessage(conn, msg);
+    });
     conn.on("close", () => {
+      window.clearTimeout(helloTimer);
       for (const [id, c] of this.conns) {
         if (c === conn) {
           this.conns.delete(id);
           this.runtime?.releaseSeat(id);
-          this.broadcast({ t: "state", state: this.runtime!.getState() });
-          this.announce("A seat opened up");
+          if (this.runtime) {
+            this.broadcast({ t: "state", state: this.runtime.getState() });
+            this.announce("A seat opened up");
+          }
           break;
         }
       }
@@ -178,19 +259,45 @@ export class LiveHost {
     });
   }
 
+  /** Returns true if the guest was seated (or reclaimed). */
+  private acceptHello(conn: DataConnection, msg: Extract<LiveWire, { t: "hello" }>): boolean {
+    if (!this.runtime) return false;
+    try {
+      // Replace a stale conn for the same player (refresh / retry).
+      const prev = this.conns.get(msg.playerId);
+      if (prev && prev !== conn) {
+        try {
+          prev.close();
+        } catch {
+          /* ignore */
+        }
+      }
+      const player = this.runtime.claimSeat(msg.name, msg.playerId, wireAvatar(msg.avatarUrl));
+      this.conns.set(player.id, conn);
+      send(conn, {
+        t: "welcome",
+        playerId: player.id,
+        seat: player.seat,
+        state: this.runtime.getState(),
+      });
+      this.announce(`${player.displayName} sat at seat ${player.seat}`);
+      this.broadcast({ t: "state", state: this.runtime.getState() });
+      return true;
+    } catch (e) {
+      send(conn, { t: "reject", message: e instanceof Error ? e.message : "Table full" });
+      try {
+        conn.close();
+      } catch {
+        /* ignore */
+      }
+      return false;
+    }
+  }
+
   private onGuestMessage(conn: DataConnection, msg: LiveWire) {
     if (!this.runtime) return;
     if (msg.t === "hello") {
-      try {
-        const player = this.runtime.claimSeat(msg.name, msg.playerId, msg.avatarUrl);
-        this.conns.set(player.id, conn);
-        send(conn, { t: "welcome", playerId: player.id, seat: player.seat, state: this.runtime.getState() });
-        this.announce(`${player.displayName} sat at seat ${player.seat}`);
-        this.broadcast({ t: "state", state: this.runtime.getState() });
-      } catch (e) {
-        send(conn, { t: "reject", message: e instanceof Error ? e.message : "Table full" });
-        conn.close();
-      }
+      this.acceptHello(conn, msg);
       return;
     }
     const playerId = [...this.conns.entries()].find(([, c]) => c === conn)?.[0];
@@ -396,64 +503,95 @@ export class LiveGuest {
 
   async start(): Promise<void> {
     this.sinks.onStatus("Connecting…");
-    await new Promise<void>((resolve, reject) => {
+    let lastError = "Could not join table";
+    for (let round = 1; round <= JOIN_ATTEMPTS; round++) {
+      try {
+        await this.connectOnce(round);
+        return;
+      } catch (e) {
+        lastError = e instanceof Error ? e.message : lastError;
+        try {
+          this.conn?.close();
+        } catch {
+          /* ignore */
+        }
+        this.peer?.destroy();
+        this.conn = null;
+        this.peer = null;
+        if (round < JOIN_ATTEMPTS) {
+          this.sinks.onStatus(`Retrying join (${round + 1}/${JOIN_ATTEMPTS})…`);
+          await delay(400 * round);
+        }
+      }
+    }
+    this.sinks.onError(lastError);
+    throw new Error(lastError);
+  }
+
+  private connectOnce(round: number): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
       const peer = new Peer(PEER_OPTS);
       this.peer = peer;
       let settled = false;
       const fail = (message: string) => {
         if (settled) return;
         settled = true;
-        this.sinks.onError(message);
         reject(new Error(message));
       };
       peer.on("error", (err) => {
+        if (settled) return;
+        if (isRetryablePeerError(err) && round < JOIN_ATTEMPTS) {
+          fail(err.message || "Peer unavailable");
+          return;
+        }
         fail(err.message || "Connection failed");
       });
       peer.on("open", () => {
         const hostId = peerIdForRoom(this.roomCode);
-        let attempt = 0;
-        const connect = () => {
-          attempt += 1;
-          this.sinks.onStatus(attempt > 1 ? `Retrying join (${attempt}/4)…` : "Connecting…");
-          const conn = peer.connect(hostId, { reliable: true, serialization: "json" });
-          this.conn = conn;
-          const timer = window.setTimeout(() => {
-            if (conn.open || settled) return;
-            try {
-              conn.close();
-            } catch {
-              /* ignore */
-            }
-            if (attempt < 4) connect();
-            else fail("Table didn’t answer — ask the host to keep the page open");
-          }, 9000);
-          conn.on("open", () => {
+        this.sinks.onStatus(round > 1 ? `Retrying join (${round}/${JOIN_ATTEMPTS})…` : "Connecting…");
+        const conn = peer.connect(hostId, { reliable: true, serialization: "json" });
+        this.conn = conn;
+        const timer = window.setTimeout(() => {
+          if (settled) return;
+          try {
+            conn.close();
+          } catch {
+            /* ignore */
+          }
+          fail("Table didn’t answer — ask the host to keep the page open");
+        }, JOIN_TIMEOUT_MS);
+        conn.on("open", () => {
+          window.clearTimeout(timer);
+          send(conn, {
+            t: "hello",
+            name: this.name,
+            playerId: this.playerId,
+            avatarUrl: wireAvatar(this.avatarUrl),
+          });
+        });
+        conn.on("data", (raw) => {
+          const msg = raw as LiveWire;
+          this.onHostMessage(msg);
+          if (msg.t === "welcome" && !settled) {
             window.clearTimeout(timer);
-            send(conn, {
-              t: "hello",
-              name: this.name,
-              playerId: this.playerId,
-              avatarUrl: this.avatarUrl,
-            });
+            settled = true;
             this.sinks.onStatus("Joined table");
-            if (!settled) {
-              settled = true;
-              resolve();
-            }
-          });
-          conn.on("data", (raw) => this.onHostMessage(raw as LiveWire));
-          conn.on("close", () => {
-            if (!settled) return;
-            this.sinks.onError("Host left the table");
-          });
-          conn.on("error", (err) => {
+            resolve();
+          }
+          if (msg.t === "reject" && !settled) {
             window.clearTimeout(timer);
-            if (settled) this.sinks.onError(err.message || "Link dropped");
-            else if (attempt < 4) connect();
-            else fail(err.message || "Could not join table");
-          });
-        };
-        connect();
+            fail(msg.message || "Table full");
+          }
+        });
+        conn.on("close", () => {
+          if (!settled) fail("Connection closed before join finished");
+          else this.sinks.onError("Host left the table");
+        });
+        conn.on("error", (err) => {
+          window.clearTimeout(timer);
+          if (settled) this.sinks.onError(err.message || "Link dropped");
+          else fail(err.message || "Could not join table");
+        });
       });
     });
   }
