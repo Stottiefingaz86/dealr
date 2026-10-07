@@ -5,5 +5,5 @@
   "buildCommand": "pnpm turbo run build --filter=@live-dealr/player",
   "outputDirectory": "apps/player/out",
   "cleanUrls": true,
-  "rewrites": [{ "source": "/real", "destination": "/real.html" }]
+  "trailingSlash": true
 }
