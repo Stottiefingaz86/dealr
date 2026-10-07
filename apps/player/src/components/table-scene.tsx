@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ANIMATION_INTENSITY } from "@live-dealr/environments";
 import type {
@@ -49,22 +49,25 @@ const PLANE_V_COMPACT = { left: 0.02, width: 0.96, top: 0.72, height: 0.94 };
  * Seat 1 = local (centre). Desktop arc uses the full slab; phone arc is tighter
  * so every hand stays on-screen (no off-table crop).
  */
-/** Local seat higher on the slab so the bet pad sits above the bottom chip tray. */
+/**
+ * Seat 1 = local centre. Higher Y = closer to camera (lower on screen).
+ * Pads sit mid-slab so cards clear the dealer and the dock sits just under them.
+ */
 const SEAT_POS: ReadonlyArray<readonly [number, number]> = [
-  [50, 34],
-  [30, 32],
-  [70, 32],
-  [14, 28],
-  [86, 28],
+  [50, 44],
+  [30, 40],
+  [70, 40],
+  [12, 36],
+  [88, 36],
 ];
 const SEAT_POS_COMPACT: ReadonlyArray<readonly [number, number]> = [
-  [50, 38],
-  [32, 36],
-  [68, 36],
-  [18, 32],
-  [82, 32],
+  [50, 48],
+  [32, 44],
+  [68, 44],
+  [16, 40],
+  [84, 40],
 ];
-const DEALER = { x: 50, y: 12 };
+const DEALER = { x: 50, y: 8 };
 /** How long the bet pad takes to open, swallow the chips and close. */
 const PAD_CLOSE_SECONDS = 1.2;
 
@@ -77,7 +80,7 @@ export function setSeatLayoutCompact(compact: boolean) {
 
 export function seatGeometry(seat: number) {
   const layout = compactSeats ? SEAT_POS_COMPACT : SEAT_POS;
-  const [x, y] = layout[seat - 1] ?? [50, 56];
+  const [x, y] = layout[seat - 1] ?? [50, 44];
   // Slight inward lean for the outer seats so cards point at the dealer.
   const angle = (x - 50) * 0.35;
   return {
@@ -119,6 +122,7 @@ export function TableScene({
   canBet,
   onBet,
   onSit,
+  localDock,
   dealerVideoRef,
 }: {
   settings: PlayerEnvironmentSettings;
@@ -130,6 +134,8 @@ export function TableScene({
   onBet: () => void;
   /** Tap an empty pad to sit there (friends table). */
   onSit?: (seat: number) => void;
+  /** Bet / action controls — rendered in the avatar Standee so they share one position. */
+  localDock?: ReactNode;
   /** Keyed dealer <video>; reflected on the glass so she reads as standing at the table. */
   dealerVideoRef?: RefObject<HTMLVideoElement | null>;
 }) {
@@ -169,7 +175,7 @@ export function TableScene({
   return (
     <div
       ref={rootRef}
-      className="pointer-events-none absolute inset-0 z-[6] overflow-clip"
+      className="pointer-events-none absolute inset-0 z-[6] overflow-visible"
       style={{
         perspective: PERSPECTIVE * unit,
         perspectiveOrigin: `50% ${frame.top + frame.height * 0.1}px`,
@@ -217,6 +223,7 @@ export function TableScene({
               canBet={canBet && seat.isLocal}
               onBet={onBet}
               onSit={onSit ? () => onSit(seat.seat) : undefined}
+              dock={seat.isLocal ? localDock : null}
               hue={hue}
               scale={unit}
             />
@@ -634,7 +641,7 @@ function FlatGroup({
   y: number;
   rotate?: number;
   scale?: number;
-  children: React.ReactNode;
+  children: ReactNode;
   className?: string;
 }) {
   return (
@@ -652,6 +659,22 @@ function FlatGroup({
   );
 }
 
+/**
+ * Keep the tray under the selected pad. Only a light inward nudge on the
+ * extreme seats so the wide chip row doesn't hard-clip the frame.
+ */
+function dockStandeeX(seatX: number) {
+  const offset = seatX - 50;
+  if (Math.abs(offset) < 28) return seatX;
+  const excess = Math.abs(offset) - 28;
+  const nudge = Math.min(excess * 0.4, 6);
+  return seatX - Math.sign(offset) * nudge;
+}
+
+function dockStandeeScale(seatX: number) {
+  return Math.abs(seatX - 50) > 28 ? 0.9 : 1;
+}
+
 /** Stands upright on the felt, facing the camera (bottom edge on the anchor). */
 function Standee({
   x,
@@ -663,7 +686,7 @@ function Standee({
   x: number;
   y: number;
   scale?: number;
-  children: React.ReactNode;
+  children: ReactNode;
   className?: string;
 }) {
   return (
@@ -759,6 +782,7 @@ function Seat({
   canBet,
   onBet,
   onSit,
+  dock,
   hue,
   scale,
 }: {
@@ -767,6 +791,7 @@ function Seat({
   canBet: boolean;
   onBet: () => void;
   onSit?: () => void;
+  dock?: ReactNode;
   hue: number;
   scale: number;
 }) {
@@ -849,11 +874,6 @@ function Seat({
             scale={sc}
             className="pointer-events-auto"
           >
-            {/* Measured for chip tray / action dock — glued to the pad, not the tag. */}
-            <div
-              data-seat-anchor={model.seat}
-              className="pointer-events-none absolute left-1/2 top-1/2 size-1 -translate-x-1/2 -translate-y-1/2 opacity-0"
-            />
             <motion.button
               type="button"
               disabled={!canBet}
@@ -984,13 +1004,21 @@ function Seat({
         <CardFan cards={model.cards} size="md" total={model.handTotal} />
       </FlatGroup>
 
-      {/* Identity tag — avatar + name + wager. Anchor only when pad isn't up. */}
-      <Standee x={geo.tag.x} y={geo.tag.y} scale={sc} className="pointer-events-auto">
+      {/*
+        One Standee for avatar / bet tray / hit-stand — same seat as the nameplate.
+        Outer seats pull the wide tray toward centre so it doesn't clip the frame.
+      */}
+      <Standee
+        x={dock ? dockStandeeX(geo.tag.x) : geo.tag.x}
+        y={dock ? geo.tag.y + (betting ? 3 : 0) : geo.tag.y}
+        scale={dock ? dockStandeeScale(geo.tag.x) : 1}
+        className="pointer-events-auto z-20"
+      >
         <div
           className="relative flex flex-col items-center"
           data-seat-drop={model.seat}
-          {...(!betting ? { "data-seat-anchor": model.seat } : {})}
-          style={{ transformStyle: "flat", visibility: model.hideTag ? "hidden" : "visible" }}
+          data-seat-anchor={model.seat}
+          style={{ transformStyle: "flat" }}
         >
           <div className="pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2">
             <SeatActionBurst
@@ -998,64 +1026,69 @@ function Seat({
               burstId={model.actionBurst?.id ?? null}
             />
           </div>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              model.onAvatarClick();
-            }}
-            aria-label={model.isLocal ? "Your reactions" : `${name} profile`}
-            className={`relative flex items-center gap-1.5 whitespace-nowrap rounded-full border py-[3px] pl-[3px] pr-2.5 shadow-[0_8px_20px_rgba(0,0,0,0.6)] ${
-              model.isActing
-                ? "border-[#f0c43a]/80 bg-[#1c170a]"
-                : model.menuOpen
-                  ? "border-[#f0c43a]/80 bg-[#0d0d13]"
-                  : model.isLocal
-                    ? "border-[#f0c43a]/45 bg-[#0d0d13]"
-                    : "border-white/15 bg-[#0d0d13]"
-            }`}
-          >
-            <span className="relative flex size-[30px] items-center justify-center">
+          {dock ? (
+            dock
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                model.onAvatarClick();
+              }}
+              aria-label={model.isLocal ? "Your reactions" : `${name} profile`}
+              className={`relative flex items-center gap-1.5 whitespace-nowrap rounded-full border py-[3px] pl-[3px] pr-2.5 shadow-[0_8px_20px_rgba(0,0,0,0.6)] ${
+                model.isActing
+                  ? "border-[#f0c43a]/80 bg-[#1c170a]"
+                  : model.menuOpen
+                    ? "border-[#f0c43a]/80 bg-[#0d0d13]"
+                    : model.isLocal
+                      ? "border-[#f0c43a]/45 bg-[#0d0d13]"
+                      : "border-white/15 bg-[#0d0d13]"
+              }`}
+              style={{ visibility: model.hideTag ? "hidden" : "visible" }}
+            >
+              <span className="relative flex size-[30px] items-center justify-center">
+                <AnimatePresence>
+                  {model.isActing ? (
+                    <TurnOrb
+                      progress={model.turnProgress}
+                      seconds={model.turnSeconds}
+                      avatarSize={28}
+                    />
+                  ) : null}
+                </AnimatePresence>
+                <PlayerAvatar
+                  name={name || "?"}
+                  src={model.avatarUrl}
+                  isLocal={model.isLocal}
+                  isActing={model.isActing}
+                  size={28}
+                />
+              </span>
+              <span
+                className={`max-w-[5.5rem] truncate text-[11px] leading-none ${
+                  model.isLocal || model.isActing
+                    ? "font-semibold text-[#f0c43a]"
+                    : "font-medium text-white/90"
+                }`}
+              >
+                {name}
+              </span>
               <AnimatePresence>
-                {model.isActing ? (
-                  <TurnOrb
-                    progress={model.turnProgress}
-                    seconds={model.turnSeconds}
-                    avatarSize={28}
-                  />
+                {model.bet > 0 ? (
+                  <motion.span
+                    key="bet"
+                    className="text-[11px] font-semibold tabular-nums leading-none text-white"
+                    initial={{ opacity: 0, x: -4 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    ${model.bet}
+                  </motion.span>
                 ) : null}
               </AnimatePresence>
-              <PlayerAvatar
-                name={name || "?"}
-                src={model.avatarUrl}
-                isLocal={model.isLocal}
-                isActing={model.isActing}
-                size={28}
-              />
-            </span>
-            <span
-              className={`max-w-[5.5rem] truncate text-[11px] leading-none ${
-                model.isLocal || model.isActing
-                  ? "font-semibold text-[#f0c43a]"
-                  : "font-medium text-white/90"
-              }`}
-            >
-              {name}
-            </span>
-            <AnimatePresence>
-              {model.bet > 0 ? (
-                <motion.span
-                  key="bet"
-                  className="text-[11px] font-semibold tabular-nums leading-none text-white"
-                  initial={{ opacity: 0, x: -4 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0 }}
-                >
-                  ${model.bet}
-                </motion.span>
-              ) : null}
-            </AnimatePresence>
-          </button>
+            </button>
+          )}
         </div>
       </Standee>
     </>

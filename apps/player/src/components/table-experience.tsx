@@ -65,8 +65,6 @@ import { speakHandTotal, speakRewardCongrats, speakTipThanks } from "@/lib/deale
 type ActionBurst = { action: PlayerActionType; id: string };
 
 /** Drop below the seat tag so trays clear the bet pad / cards. */
-const BET_DOCK_DROP_PX = 72;
-const ACTION_DOCK_DROP_PX = 64;
 
 export type TableExperienceProps = {
   /** Override for live/friends tables where your id isn't the demo DEFAULT_PLAYER_ID. */
@@ -320,7 +318,7 @@ export function TableExperience({
       turnSeconds: acting ? actionRemaining : null,
       actionBurst: seated ? (actionBursts[seated.id] ?? null) : null,
       menuOpen: isLocal ? reactions.menuOpen : playerMenu?.playerId === seated?.id,
-      hideTag: isLocal && (betting || isMyTurn),
+      hideTag: false,
       onAvatarClick: () => {
         if (isLocal) {
           setPlayerMenu(null);
@@ -420,6 +418,76 @@ export function TableExperience({
           unlockAudio();
           chooseSeat(seat);
         }}
+        localDock={
+          betting ? (
+            <SeatDock
+              seconds={bettingRemaining}
+              leading={
+                <DockButton label="Undo bet" onClick={clearBet} disabled={totalBet === 0}>
+                  <Undo2 className="size-4" strokeWidth={1.75} />
+                </DockButton>
+              }
+              trailing={
+                <>
+                  <DockButton
+                    label="Double bet"
+                    onClick={() => {
+                      for (const chip of chips) {
+                        addChip(chip);
+                      }
+                    }}
+                    disabled={totalBet === 0}
+                  >
+                    <span className="text-[11px] font-bold">2×</span>
+                  </DockButton>
+                  <DockButton
+                    label="Confirm bet"
+                    onClick={() => {
+                      unlockAudio();
+                      playBetConfirm();
+                      confirmBet();
+                    }}
+                    disabled={totalBet < 1}
+                    accent
+                    pulse={totalBet >= 1}
+                  >
+                    <Check className="size-4" strokeWidth={2.5} />
+                  </DockButton>
+                </>
+              }
+            >
+              <span
+                className={`mr-2 min-w-[2.4rem] border-r border-white/10 pr-2 text-right text-[12px] font-semibold tabular-nums sm:mr-2.5 sm:min-w-[2.6rem] sm:pr-2.5 sm:text-[13px] ${
+                  totalBet > 0 ? "text-[#f0c43a]" : "text-white/35"
+                }`}
+              >
+                ${formatMoney(totalBet)}
+              </span>
+              <ChipTray
+                minimal
+                size={isMobile ? 28 : 34}
+                selectedChip={selectedChip}
+                onSelectChip={setSelectedChip}
+                onUndo={clearBet}
+                onDouble={() => {
+                  for (const chip of chips) {
+                    addChip(chip);
+                  }
+                }}
+                chipValues={CHIP_VALUES}
+                canDouble={totalBet > 0}
+              />
+            </SeatDock>
+          ) : isMyTurn ? (
+            <SeatDock seconds={actionRemaining} urgent={actionProgress < 0.3}>
+              <ActionRing
+                size="sm"
+                available={state?.availableActions ?? []}
+                onAction={(action) => sendAction(action)}
+              />
+            </SeatDock>
+          ) : null
+        }
         dealerVideoRef={dealerVideoRef}
       />
 
@@ -551,87 +619,6 @@ export function TableExperience({
         </header>
       </div>
 
-      {/* Tray hangs under your seat pad — pill centred on the seat, sides wing out. */}
-      <AnimatePresence mode="wait">
-        {betting ? (
-          <SeatDock
-            key="bets-dock"
-            spot={localSpot}
-            dropPx={BET_DOCK_DROP_PX}
-            seconds={bettingRemaining}
-            leading={
-              <DockButton label="Undo bet" onClick={clearBet} disabled={totalBet === 0}>
-                <Undo2 className="size-4" strokeWidth={1.75} />
-              </DockButton>
-            }
-            trailing={
-              <>
-                <DockButton
-                  label="Double bet"
-                  onClick={() => {
-                    for (const chip of chips) {
-                      addChip(chip);
-                    }
-                  }}
-                  disabled={totalBet === 0}
-                >
-                  <span className="text-[11px] font-bold">2×</span>
-                </DockButton>
-                <DockButton
-                  label="Confirm bet"
-                  onClick={() => {
-                    unlockAudio();
-                    playBetConfirm();
-                    confirmBet();
-                  }}
-                  disabled={totalBet < 1}
-                  accent
-                  pulse={totalBet >= 1}
-                >
-                  <Check className="size-4" strokeWidth={2.5} />
-                </DockButton>
-              </>
-            }
-          >
-            <span
-              className={`mr-2 min-w-[2.4rem] border-r border-white/10 pr-2 text-right text-[12px] font-semibold tabular-nums sm:mr-2.5 sm:min-w-[2.6rem] sm:pr-2.5 sm:text-[13px] ${
-                totalBet > 0 ? "text-[#f0c43a]" : "text-white/35"
-              }`}
-            >
-              ${formatMoney(totalBet)}
-            </span>
-            <ChipTray
-              minimal
-              size={isMobile ? 30 : 38}
-              selectedChip={selectedChip}
-              onSelectChip={setSelectedChip}
-              onUndo={clearBet}
-              onDouble={() => {
-                for (const chip of chips) {
-                  addChip(chip);
-                }
-              }}
-              chipValues={CHIP_VALUES}
-              canDouble={totalBet > 0}
-            />
-          </SeatDock>
-        ) : isMyTurn ? (
-          <SeatDock
-            key="action-dock"
-            spot={localSpot}
-            dropPx={ACTION_DOCK_DROP_PX}
-            seconds={actionRemaining}
-            urgent={actionProgress < 0.3}
-          >
-            <ActionRing
-              size="sm"
-              available={state?.availableActions ?? []}
-              onAction={(action) => sendAction(action)}
-            />
-          </SeatDock>
-        ) : null}
-      </AnimatePresence>
-
       <WinConfetti active={Boolean(won)} big={result?.outcome === "blackjack"} />
 
       <WalletDrawer
@@ -730,9 +717,8 @@ export function TableExperience({
   );
 }
 
+/** Pill + wing buttons — lives inside the avatar Standee (same seat position). */
 function SeatDock({
-  spot,
-  dropPx = ACTION_DOCK_DROP_PX,
   seconds,
   urgent = false,
   caption,
@@ -740,8 +726,6 @@ function SeatDock({
   trailing,
   children,
 }: {
-  spot: { x: number; y: number };
-  dropPx?: number;
   seconds: number | null;
   urgent?: boolean;
   caption?: string;
@@ -749,18 +733,9 @@ function SeatDock({
   trailing?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  // Pill on the seat centre line; wings don't shift it. Clamp so we never clip
-  // under the home indicator / missions row.
-  const style = {
-    left: `${spot.x}%`,
-    top: `min(calc(${spot.y}% + ${dropPx}px), calc(100% - 5.25rem - env(safe-area-inset-bottom, 0px)))`,
-    transform: "translate(-50%, -50%)",
-  };
-
   return (
     <motion.div
-      className="pointer-events-none absolute z-40 flex flex-col items-center gap-1.5"
-      style={style}
+      className="pointer-events-none relative z-20 flex flex-col items-center gap-1.5"
       initial={{ opacity: 0, scale: 0.85 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.16 } }}
