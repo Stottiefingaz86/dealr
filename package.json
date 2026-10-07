@@ -20,5 +20,10 @@
     "prettier": "^3.6.2",
     "turbo": "^2.5.8",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "next": "16.4.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
   }
 }

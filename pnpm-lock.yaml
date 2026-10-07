@@ -7,6 +7,16 @@ settings:
 importers:
 
   .:
+    dependencies:
+      next:
+        specifier: 16.4.0
+        version: 16.4.0(@types/node@24.19.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      react:
+        specifier: ^19.1.1
+        version: 19.3.0
+      react-dom:
+        specifier: ^19.1.1
+        version: 19.3.0(react@19.3.0)
     devDependencies:
       prettier:
         specifier: ^3.6.2
