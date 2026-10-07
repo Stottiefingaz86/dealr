@@ -40,7 +40,7 @@ import { formatMoney } from "@/lib/chips";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { setSfxLevels } from "@/lib/sfx-levels";
 import { playSocialPop } from "@/lib/chip-sound";
-import { playCountdownTick, playTurnChime } from "@/lib/turn-sound";
+import { playCountdownTick, playRewardClaim, playTurnChime } from "@/lib/turn-sound";
 import { ensureAmbience } from "@/lib/music";
 import { playChipPlace, unlockAudio } from "@/lib/chip-sound";
 import { playCardDeal } from "@/lib/card-sound";
@@ -555,7 +555,7 @@ export function TableExperience() {
             amount: mission.reward.kind === "cashback" ? mission.reward.amount : 0,
             unlockLabel: mission.reward.kind === "cashback" ? undefined : mission.reward.label,
           });
-          playTurnChime();
+          playRewardClaim();
         }}
       />
 
