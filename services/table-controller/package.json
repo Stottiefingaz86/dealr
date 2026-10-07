@@ -1,0 +1,19 @@
+{
+  "name": "@live-dealr/table-controller",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@live-dealr/blackjack-engine": "workspace:*",
+    "@live-dealr/card-reader": "workspace:*",
+    "@live-dealr/dealer-profiles": "workspace:*",
+    "@live-dealr/physical-game-events": "workspace:*",
+    "@live-dealr/rewards": "workspace:*",
+    "@live-dealr/shared-types": "workspace:*",
+    "@nestjs/common": "^11.1.6",
+    "rxjs": "^7.8.2"
+  }
+}

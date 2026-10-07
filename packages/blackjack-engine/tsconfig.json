@@ -1,0 +1,4 @@
+{
+  "extends": "@live-dealr/typescript-config/base.json",
+  "include": ["src", "tests"]
+}

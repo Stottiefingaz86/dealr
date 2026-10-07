@@ -1,0 +1,13 @@
+{
+  "name": "@live-dealr/realtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@live-dealr/shared-types": "workspace:*",
+    "socket.io-client": "^4.8.1"
+  }
+}

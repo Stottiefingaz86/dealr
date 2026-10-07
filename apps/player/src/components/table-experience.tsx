@@ -1,0 +1,733 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { MessageSquare, PenLine, RotateCcw, SlidersHorizontal, Undo2 } from "lucide-react";
+import {
+  CHIP_VALUES,
+  DEFAULT_PLAYER_ID,
+  type ChipValue,
+  type Hand,
+  type Player,
+  type PlayerActionType,
+} from "@live-dealr/shared-types";
+import { EnvironmentLayer } from "./layers/environment-layer";
+import {
+  DealerVideoLayer,
+  DEMO_DEALER_SOURCES,
+  type FeedStatus,
+} from "./layers/dealer-video-layer";
+import { MoodOverlay } from "./layers/mood-overlay";
+import { BackgroundEffects } from "./layers/background-effects";
+import { TableScene, type SceneSeat } from "./table-scene";
+import { ChipTray } from "./chip-tray";
+import { ActionRing } from "./action-ring";
+import { StreamChat } from "./stream-chat";
+import { ChatDrawer } from "./chat-drawer";
+import { DealerDrawer } from "./dealer-drawer";
+import { DealerAvatar } from "./dealer-avatar";
+import { WalletDrawer } from "./wallet-drawer";
+import { AtmosphereDrawer } from "./atmosphere-drawer";
+import { MissionsButton, MissionsDrawer } from "./missions-drawer";
+import { WinConfetti } from "./win-confetti";
+import { PlayerMenu } from "./player-menu";
+import { AvatarReactionMenu, ReactionLayer, useReactions } from "./reactions";
+import { useTableSocket } from "@/lib/use-table-socket";
+import { useCountdown } from "@/lib/use-countdown";
+import { useAnchorSpots } from "@/lib/use-anchor-spots";
+import { usePlayerStore } from "@/lib/store";
+import { formatMoney } from "@/lib/chips";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { setSfxLevels } from "@/lib/sfx-levels";
+import { playSocialPop } from "@/lib/chip-sound";
+import { playCountdownTick, playTurnChime } from "@/lib/turn-sound";
+import { playChipPlace, unlockAudio } from "@/lib/chip-sound";
+import { playCardDeal } from "@/lib/card-sound";
+
+type ActionBurst = { action: PlayerActionType; id: string };
+
+/** Push the seat dock below the tag anchor so it clears the bet pad. */
+const DOCK_DROP_PX = 26;
+
+export function TableExperience() {
+  const { addChip, clearBet, sendAction, follow, sendChat, tip, sendReaction, claimReward } =
+    useTableSocket();
+  const [feedStatus, setFeedStatus] = useState<FeedStatus>("idle");
+  const dealerSources = process.env.NEXT_PUBLIC_DEALER_STREAM_URL
+    ? [process.env.NEXT_PUBLIC_DEALER_STREAM_URL]
+    : DEMO_DEALER_SOURCES;
+  const state = usePlayerStore((s) => s.state);
+  const events = usePlayerStore((s) => s.events);
+  const chat = usePlayerStore((s) => s.chat);
+  const roomReactions = usePlayerStore((s) => s.reactions);
+  const following = usePlayerStore((s) => s.following);
+  const setFollowing = usePlayerStore((s) => s.setFollowing);
+  const panel = usePlayerStore((s) => s.panel);
+  const setPanel = usePlayerStore((s) => s.setPanel);
+  const settings = usePlayerStore((s) => s.settings);
+  const updateSettings = usePlayerStore((s) => s.updateSettings);
+  const missions = usePlayerStore((s) => s.missions);
+  const unlockList = usePlayerStore((s) => s.unlocks);
+  const signalMission = usePlayerStore((s) => s.signalMission);
+  const claimMission = usePlayerStore((s) => s.claimMission);
+  const unlocks = useMemo(() => new Set(unlockList), [unlockList]);
+  const bettingRemaining = useCountdown(state?.bettingClosesAt ?? null);
+  const actionRemaining = useCountdown(state?.actionClosesAt ?? null);
+  const [selectedChip, setSelectedChip] = useState<ChipValue>(25);
+  const isMobile = useIsMobile();
+  useEffect(() => {
+    setSfxLevels({ table: settings.tableVolume, social: settings.socialVolume });
+  }, [settings.tableVolume, settings.socialVolume]);
+  const [actionBursts, setActionBursts] = useState<Record<string, ActionBurst>>({});
+  const [friends, setFriends] = useState<Set<string>>(() => new Set());
+  const [playerMenu, setPlayerMenu] = useState<{
+    playerId: string;
+    name: string;
+    seat: number;
+  } | null>(null);
+  const seenActionEvents = useRef(new Set<string>());
+  const mainRef = useRef<HTMLElement>(null);
+  const dealerVideoRef = useRef<HTMLVideoElement>(null);
+  const reactions = useReactions();
+
+  useEffect(() => {
+    for (const event of events) {
+      if (event.type !== "PLAYER_ACTION_RECEIVED") {
+        continue;
+      }
+      if (seenActionEvents.current.has(event.id)) {
+        continue;
+      }
+      seenActionEvents.current.add(event.id);
+      const { playerId, action } = event.payload;
+      setActionBursts((prev) => ({ ...prev, [playerId]: { action, id: event.id } }));
+      window.setTimeout(() => {
+        setActionBursts((prev) => {
+          if (prev[playerId]?.id !== event.id) {
+            return prev;
+          }
+          const next = { ...prev };
+          delete next[playerId];
+          return next;
+        });
+      }, 1900);
+    }
+  }, [events]);
+
+  const playersBySeat = useMemo(() => {
+    const map = new Map<number, Player>();
+    for (const player of state?.players ?? []) {
+      map.set(player.seat, player);
+    }
+    return map;
+  }, [state?.players]);
+
+  const localPlayer =
+    playersBySeat.get(1) ??
+    state?.players.find((player) => player.id === DEFAULT_PLAYER_ID) ??
+    state?.players[0];
+  const playerHand = localPlayer?.hands[0];
+  const dealerHand = state?.dealer.hand;
+
+  const cardCount = (playerHand?.cards.length ?? 0) + (dealerHand?.cards.length ?? 0);
+  useEffect(() => {
+    if (cardCount > 0) {
+      playCardDeal();
+    }
+  }, [cardCount]);
+
+  const result = state?.lastSettlements.find((item) => item.playerId === localPlayer?.id);
+  const won =
+    result &&
+    (result.outcome === "win" || result.outcome === "blackjack") &&
+    state?.table.phase === "round_complete";
+
+  const betting = state?.table.phase === "betting";
+  const isMyTurn =
+    state?.table.phase === "player_action" && state.actingPlayerId === localPlayer?.id;
+  const someoneElseActing =
+    state?.table.phase === "player_action" &&
+    Boolean(state.actingPlayerId) &&
+    state.actingPlayerId !== localPlayer?.id;
+
+  // Mission signals: a settled hand (once per round) and a locked-in bet (once per round)
+  const settledRoundRef = useRef<string | null>(null);
+  const betRoundRef = useRef<string | null>(null);
+  const roundId = state?.round?.id ?? null;
+  const phase = state?.table.phase;
+  useEffect(() => {
+    if (!roundId || !localPlayer) return;
+    if (phase !== "betting" && betRoundRef.current !== roundId && localPlayer.currentBet > 0) {
+      betRoundRef.current = roundId;
+      signalMission({ type: "bet_locked", amount: localPlayer.currentBet });
+    }
+    if (phase === "round_complete" && result && settledRoundRef.current !== roundId) {
+      settledRoundRef.current = roundId;
+      const hand = localPlayer.hands.find((h) => h.id === result.handId);
+      signalMission({
+        type: "hand_settled",
+        outcome: result.outcome,
+        bet: result.betAmount,
+        net: result.net,
+        doubled: Boolean(hand?.isDoubled),
+      });
+    }
+  }, [roundId, phase, result, localPlayer, signalMission]);
+
+  // Heads-up chime the moment the action passes to you
+  useEffect(() => {
+    if (isMyTurn) playTurnChime();
+  }, [isMyTurn]);
+
+  // Tick through the last three seconds of any clock that's yours to beat
+  const myClock = betting ? bettingRemaining : isMyTurn ? actionRemaining : null;
+  useEffect(() => {
+    if (myClock !== null && myClock >= 1 && myClock <= 3) playCountdownTick(myClock);
+  }, [myClock]);
+
+  const dealerName = state?.dealer.profile.displayName ?? "Isla Noir";
+  const balance = localPlayer?.demoCredits ?? 1000;
+  const totalBet = localPlayer?.currentBet ?? 0;
+  const chips = localPlayer?.chipStack ?? [];
+  const bettingSeconds = 15;
+  const actionWindowSeconds = someoneElseActing ? 6 : 12;
+  const bettingProgress =
+    betting && bettingRemaining !== null
+      ? Math.max(0, Math.min(1, bettingRemaining / bettingSeconds))
+      : 0;
+  const actionProgress =
+    state?.actionClosesAt && actionRemaining !== null
+      ? Math.max(0, Math.min(1, actionRemaining / actionWindowSeconds))
+      : 1;
+
+  function placeOnLocalSeat() {
+    if (!betting) {
+      return;
+    }
+    unlockAudio();
+    playChipPlace();
+    addChip(selectedChip);
+  }
+
+  const sceneSeats: SceneSeat[] = [1, 2, 3, 4, 5].flatMap((seat) => {
+    const seated = playersBySeat.get(seat);
+    if (!seated && seat !== 1) {
+      return [];
+    }
+    const isLocal = seated?.id === DEFAULT_PLAYER_ID || seat === 1;
+    const player = seated ?? localPlayer;
+    const hand = player?.hands[0];
+    const acting = Boolean(
+      player && state?.table.phase === "player_action" && state.actingPlayerId === player.id,
+    );
+    return [
+      {
+        seat,
+        displayName: player?.displayName ?? (isLocal ? "You" : null),
+        isLocal,
+        chips: player?.chipStack ?? [],
+        bet: player?.currentBet ?? 0,
+        cards: hand?.cards ?? [],
+        handTotal: handLabel(hand),
+        isActing: acting,
+        turnProgress: acting ? actionProgress : 1,
+        turnSeconds: acting ? actionRemaining : null,
+        actionBurst: player ? (actionBursts[player.id] ?? null) : null,
+        menuOpen: isLocal ? reactions.menuOpen : playerMenu?.playerId === player?.id,
+        hideTag: isLocal && (betting || isMyTurn),
+        onAvatarClick: () => {
+          if (isLocal) {
+            setPlayerMenu(null);
+            reactions.setMenuOpen(!reactions.menuOpen);
+            return;
+          }
+          if (!player) {
+            return;
+          }
+          reactions.setMenuOpen(false);
+          setPlayerMenu({ playerId: player.id, name: player.displayName, seat });
+        },
+      },
+    ];
+  });
+
+  // Screen-space anchors (measured through the 3D plane) for menus + throws
+  const anchorSpots = useAnchorSpots(mainRef, sceneSeats.length);
+  const localSpot = anchorSpots[1] ?? { x: 50, y: 80 };
+  const seatTargets = sceneSeats.map((s) => ({
+    seat: s.seat,
+    spot: anchorSpots[s.seat] ?? { x: 50, y: 70 },
+    isLocal: s.isLocal,
+  }));
+  const menuPlayerSpot = playerMenu ? (anchorSpots[playerMenu.seat] ?? null) : null;
+
+  // Play reactions from the rest of the room (ours are rendered locally when sent).
+  const seenReactions = useRef(new Set<string>());
+  const anchorRef = useRef(anchorSpots);
+  anchorRef.current = anchorSpots;
+  useEffect(() => {
+    for (const reaction of roomReactions) {
+      if (seenReactions.current.has(reaction.id) || reaction.senderId === DEFAULT_PLAYER_ID) {
+        continue;
+      }
+      seenReactions.current.add(reaction.id);
+      const from = anchorRef.current[reaction.fromSeat];
+      if (!from) {
+        continue;
+      }
+      if (reaction.kind === "emote") {
+        playSocialPop(1.5);
+        reactions.spawnEmote(reaction.emoji, from);
+      } else if (reaction.toSeat !== null) {
+        const to = anchorRef.current[reaction.toSeat];
+        if (to) {
+          reactions.spawnThrow(reaction.emoji, from, to);
+        }
+      }
+    }
+  }, [roomReactions, reactions.spawnEmote, reactions.spawnThrow]);
+
+  return (
+    <main ref={mainRef} className="relative min-h-dvh overflow-clip bg-black text-foreground">
+      <EnvironmentLayer settings={settings} />
+      <BackgroundEffects settings={settings} />
+      <DealerVideoLayer
+        sources={dealerSources}
+        dealerName={dealerName}
+        onStatusChange={setFeedStatus}
+        videoRef={dealerVideoRef}
+      />
+      <MoodOverlay settings={settings} />
+
+      <TableScene
+        settings={settings}
+        phase={state?.table.phase}
+        seats={sceneSeats}
+        dealerCards={dealerHand?.cards ?? []}
+        dealerTotal={handLabel(dealerHand)}
+        canBet={betting}
+        onBet={placeOnLocalSeat}
+        dealerVideoRef={dealerVideoRef}
+      />
+
+      <StreamChat
+        messages={chat}
+        dealerId={state?.dealer.id}
+        onDealerTap={() => setPanel("dealer")}
+      />
+
+      <ReactionLayer
+        throws={reactions.throws}
+        emotes={reactions.emotes}
+        impacts={reactions.impacts}
+      />
+
+      <AnimatePresence>
+        {reactions.menuOpen ? (
+          <AvatarReactionMenu
+            open={reactions.menuOpen}
+            onClose={() => reactions.setMenuOpen(false)}
+            localSpot={localSpot}
+            seats={seatTargets}
+            unlocks={unlocks}
+            onLocked={() => {
+              reactions.setMenuOpen(false);
+              setPanel("rewards");
+            }}
+            onEmote={(emoji) => {
+              playSocialPop(1.5);
+              reactions.spawnEmote(emoji, localSpot);
+              sendReaction("emote", emoji);
+              signalMission({ type: "reaction" });
+            }}
+            onThrow={(emoji, to, toSeat) => {
+              playSocialPop(0.9);
+              reactions.spawnThrow(emoji, localSpot, to);
+              sendReaction("throw", emoji, toSeat);
+              signalMission({ type: "reaction" });
+            }}
+          />
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {playerMenu && menuPlayerSpot ? (
+          <PlayerMenu
+            name={playerMenu.name}
+            spot={menuPlayerSpot}
+            isFriend={friends.has(playerMenu.playerId)}
+            onFriend={() => {
+              setFriends((prev) => {
+                const next = new Set(prev);
+                if (next.has(playerMenu.playerId)) {
+                  next.delete(playerMenu.playerId);
+                } else {
+                  next.add(playerMenu.playerId);
+                }
+                return next;
+              });
+            }}
+            onMessage={() => setPanel("chat")}
+            onClose={() => setPlayerMenu(null)}
+          />
+        ) : null}
+      </AnimatePresence>
+
+      <div className="pointer-events-none relative z-10 flex min-h-dvh flex-col">
+        <header className="pointer-events-auto flex items-start justify-between gap-3 px-4 pt-[max(0.75rem,env(safe-area-inset-top))]">
+          <div className="flex min-w-0 items-center gap-2">
+            {/* Avatar + name — one tap target, highlights on hover */}
+            <button
+              type="button"
+              onClick={() => setPanel(panel === "dealer" ? "none" : "dealer")}
+              aria-label={`${dealerName} — dealer page`}
+              className="group -ml-1.5 flex min-w-0 items-center gap-2.5 rounded-full py-1 pl-1.5 pr-4 text-left transition hover:bg-white/10 active:bg-white/14"
+            >
+              <DealerAvatar
+                size={44}
+                ring={feedStatus === "live" ? "live" : "soft"}
+                className="transition group-hover:scale-[1.04] group-hover:brightness-110"
+              />
+              <span className="min-w-0">
+                <span className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2 py-[3px] text-[9px] tracking-[0.2em] uppercase">
+                    <span
+                      className={`size-1.5 rounded-full ${feedStatus === "live" ? "bg-destructive" : "bg-white/30"}`}
+                    />
+                    {feedStatus === "live" ? "Live" : "Cam"}
+                  </span>
+                  <span className="text-[10px] tracking-[0.28em] text-white/60 uppercase">
+                    Blackjack
+                  </span>
+                </span>
+                <h1 className="mt-0.5 whitespace-nowrap font-display text-[22px] leading-none text-white drop-shadow transition group-hover:text-[#f0c43a]">
+                  {dealerName}
+                </h1>
+              </span>
+            </button>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              data-drawer-toggle="deposit"
+              onClick={() => setPanel("wallet")}
+              aria-label="Balance"
+              className={`inline-flex h-8 items-center rounded-full px-3 text-[12px] font-semibold tabular-nums text-white/90 ${
+                panel === "wallet" ? "bg-white/20" : "bg-black/35 hover:bg-black/50"
+              }`}
+            >
+              ${formatMoney(balance)}
+            </button>
+
+            <IconButton
+              label="Chat"
+              active={panel === "chat"}
+              onClick={() => setPanel(panel === "chat" ? "none" : "chat")}
+            >
+              <MessageSquare className="size-[17px]" strokeWidth={1.5} />
+            </IconButton>
+
+            <IconButton
+              label="Atmosphere"
+              active={panel === "settings"}
+              onClick={() => setPanel(panel === "settings" ? "none" : "settings")}
+            >
+              <SlidersHorizontal className="size-[17px]" strokeWidth={1.5} />
+            </IconButton>
+          </div>
+        </header>
+      </div>
+
+      {/* Seat dock — your "You" tag becomes the controls: chips while betting, moves on your turn. */}
+      <AnimatePresence mode="wait">
+        {betting ? (
+          <SeatDock
+            key="bets-dock"
+            spot={localSpot}
+            seconds={bettingRemaining}
+            leading={
+              <DockButton label="Undo bet" onClick={clearBet} disabled={totalBet === 0}>
+                <Undo2 className="size-4" strokeWidth={1.75} />
+              </DockButton>
+            }
+            trailing={
+              <DockButton
+                label="Double bet"
+                onClick={() => {
+                  for (const chip of chips) {
+                    addChip(chip);
+                  }
+                }}
+                disabled={totalBet === 0}
+              >
+                <span className="text-[11px] font-bold">2×</span>
+              </DockButton>
+            }
+          >
+            <span
+              className={`mr-2 min-w-[2.4rem] border-r border-white/10 pr-2 text-right text-[12px] font-semibold tabular-nums sm:mr-2.5 sm:min-w-[2.6rem] sm:pr-2.5 sm:text-[13px] ${
+                totalBet > 0 ? "text-[#f0c43a]" : "text-white/35"
+              }`}
+            >
+              ${formatMoney(totalBet)}
+            </span>
+            <ChipTray
+              minimal
+              size={isMobile ? 30 : 38}
+              selectedChip={selectedChip}
+              onSelectChip={setSelectedChip}
+              onUndo={clearBet}
+              onDouble={() => {
+                for (const chip of chips) {
+                  addChip(chip);
+                }
+              }}
+              chipValues={CHIP_VALUES}
+              canDouble={totalBet > 0}
+            />
+          </SeatDock>
+        ) : isMyTurn ? (
+          <SeatDock
+            key="action-dock"
+            spot={localSpot}
+            seconds={actionRemaining}
+            urgent={actionProgress < 0.3}
+          >
+            <ActionRing
+              size="sm"
+              available={state?.availableActions ?? []}
+              onAction={(action) => sendAction(action)}
+            />
+          </SeatDock>
+        ) : null}
+      </AnimatePresence>
+
+      <WinConfetti active={Boolean(won)} big={result?.outcome === "blackjack"} />
+
+      <WalletDrawer
+        open={panel === "wallet"}
+        onOpenChange={(open) => setPanel(open ? "wallet" : "none")}
+        balance={balance}
+      />
+
+      <AtmosphereDrawer
+        open={panel === "settings"}
+        onOpenChange={(open) => setPanel(open ? "settings" : "none")}
+        settings={settings}
+        onChange={updateSettings}
+      />
+
+      {isMobile ? <RotateHint /> : null}
+
+      {/* Ghost composer — opens the side chat */}
+      <button
+        type="button"
+        onClick={() => setPanel("chat")}
+        className="absolute bottom-[max(0.9rem,env(safe-area-inset-bottom))] left-3 z-30 inline-flex h-9 items-center gap-2 rounded-full border border-white/12 bg-black/35 pl-3 pr-4 text-[12px] text-white/55 backdrop-blur-md transition hover:bg-black/55 hover:text-white/80"
+      >
+        <PenLine className="size-3.5" strokeWidth={1.75} />
+        Write in chat
+      </button>
+
+      {/* Missions — floating, bottom-right */}
+      <MissionsButton
+        book={missions}
+        active={panel === "rewards"}
+        onClick={() => setPanel(panel === "rewards" ? "none" : "rewards")}
+      />
+      <MissionsDrawer
+        open={panel === "rewards"}
+        onOpenChange={(open) => setPanel(open ? "rewards" : "none")}
+        book={missions}
+        unlocks={unlocks}
+        onClaim={(mission) => {
+          claimMission(mission.id);
+          claimReward({
+            missionId: mission.id,
+            missionTitle: mission.title,
+            amount: mission.reward.kind === "cashback" ? mission.reward.amount : 0,
+            unlockLabel: mission.reward.kind === "cashback" ? undefined : mission.reward.label,
+          });
+          playTurnChime();
+        }}
+      />
+
+      {state?.dealer.profile ? (
+        <DealerDrawer
+          open={panel === "dealer"}
+          onOpenChange={(open) => setPanel(open ? "dealer" : "none")}
+          profile={state.dealer.profile}
+          live={feedStatus === "live"}
+          following={following}
+          balance={balance}
+          onFollow={(next) => {
+            setFollowing(next);
+            follow(next);
+          }}
+          onTip={(amount) => {
+            tip(amount);
+            signalMission({ type: "tip", amount });
+          }}
+        />
+      ) : null}
+
+      <ChatDrawer
+        open={panel === "chat"}
+        onOpenChange={(open) => setPanel(open ? "chat" : "none")}
+        messages={chat}
+        onSend={sendChat}
+        dealerId={state?.dealer.id}
+        onDealerTap={() => setPanel("dealer")}
+      />
+    </main>
+  );
+}
+
+function SeatDock({
+  spot,
+  seconds,
+  urgent = false,
+  caption,
+  leading,
+  trailing,
+  children,
+}: {
+  spot: { x: number; y: number };
+  seconds: number | null;
+  urgent?: boolean;
+  caption?: string;
+  leading?: React.ReactNode;
+  trailing?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <motion.div
+      className="pointer-events-none absolute z-40 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1.5"
+      style={{
+        left: `${spot.x}%`,
+        // Hang below the tag anchor, but never let the pill run off the bottom edge.
+        top: `min(calc(${spot.y}% + ${DOCK_DROP_PX}px), calc(100% - 38px - env(safe-area-inset-bottom)))`,
+      }}
+      initial={{ opacity: 0, scale: 0.85 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.16 } }}
+      transition={{ type: "spring", stiffness: 460, damping: 30 }}
+    >
+      <div className="pointer-events-auto flex items-center gap-2">
+        {leading}
+        <div
+          className={`relative flex items-center rounded-full border bg-[#0d0d13] px-2.5 py-1.5 shadow-[0_14px_36px_rgba(0,0,0,0.6)] sm:px-3 sm:py-2 ${
+            urgent ? "border-[#e04545]/70" : "border-white/15"
+          }`}
+        >
+          {children}
+          {/* Countdown badge — same language as the turn timer on avatars */}
+          {seconds !== null ? (
+            <span
+              className={`absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full text-[10px] font-bold tabular-nums text-black shadow ${
+                urgent ? "bg-[#e04545] text-white" : "bg-[#f0c43a]"
+              }`}
+            >
+              {seconds}
+            </span>
+          ) : null}
+        </div>
+        {trailing}
+      </div>
+      {caption ? (
+        <p className="whitespace-nowrap text-[10px] tabular-nums text-white/60 drop-shadow">
+          {caption}
+        </p>
+      ) : null}
+    </motion.div>
+  );
+}
+
+/** Portrait phones only: the full table needs the wide shot. */
+function RotateHint() {
+  const [portrait, setPortrait] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(orientation: portrait)");
+    const update = () => setPortrait(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  if (!portrait || dismissed) {
+    return null;
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => setDismissed(true)}
+      className="absolute right-3 top-[4.6rem] z-30 inline-flex items-center gap-1.5 rounded-full border border-white/12 bg-black/45 px-2.5 py-1 text-[10px] text-white/70 backdrop-blur-md"
+    >
+      <RotateCcw className="size-3" strokeWidth={1.75} />
+      Rotate for the full table
+    </button>
+  );
+}
+
+function DockButton({
+  onClick,
+  disabled,
+  label,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      disabled={disabled}
+      className="flex size-8 items-center justify-center rounded-full border border-white/15 bg-[#0d0d13] text-white/80 shadow-[0_10px_24px_rgba(0,0,0,0.5)] hover:bg-white/10 disabled:opacity-30 sm:size-9"
+    >
+      {children}
+    </button>
+  );
+}
+
+function IconButton({
+  children,
+  onClick,
+  label,
+  active,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  label: string;
+  active?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      className={`flex size-8 items-center justify-center rounded-full text-white/90 ${
+        active ? "bg-white/20" : "bg-black/35 hover:bg-black/50"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function handLabel(hand?: Hand | null): string | null {
+  if (!hand || hand.cards.length === 0) {
+    return null;
+  }
+  if (hand.isBust) {
+    return "BUST";
+  }
+  if (hand.isBlackjack) {
+    return "BJ";
+  }
+  return String(hand.total);
+}

@@ -1,0 +1,35 @@
+{
+  "name": "@live-dealr/player",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000"
+  },
+  "dependencies": {
+    "@live-dealr/environments": "workspace:*",
+    "@live-dealr/realtime": "workspace:*",
+    "@live-dealr/shared-types": "workspace:*",
+    "@live-dealr/ui": "workspace:*",
+    "canvas-confetti": "^1.9.4",
+    "framer-motion": "^12.23.12",
+    "lucide-react": "^0.544.0",
+    "next": "16.4.0",
+    "ogl": "^1.0.11",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "vaul": "^1.1.2",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@live-dealr/typescript-config": "workspace:*",
+    "@tailwindcss/postcss": "^4.1.13",
+    "@types/canvas-confetti": "^1.9.0",
+    "@types/node": "^24.6.0",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "tailwindcss": "^4.1.13",
+    "typescript": "^5.9.3"
+  }
+}

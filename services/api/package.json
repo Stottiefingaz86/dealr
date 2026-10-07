@@ -1,0 +1,32 @@
+{
+  "name": "@live-dealr/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --tsconfig tsconfig.json src/main.ts",
+    "start": "tsx --tsconfig tsconfig.json src/main.ts",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@live-dealr/card-reader": "workspace:*",
+    "@live-dealr/environments": "workspace:*",
+    "@live-dealr/media": "workspace:*",
+    "@live-dealr/realtime": "workspace:*",
+    "@live-dealr/shared-types": "workspace:*",
+    "@live-dealr/table-controller": "workspace:*",
+    "@live-dealr/websocket": "workspace:*",
+    "@nestjs/common": "^11.1.6",
+    "@nestjs/core": "^11.1.6",
+    "@nestjs/platform-express": "^11.1.6",
+    "@nestjs/platform-socket.io": "^11.1.6",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@live-dealr/typescript-config": "workspace:*",
+    "@types/node": "^24.6.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

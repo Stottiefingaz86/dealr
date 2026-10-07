@@ -1,0 +1,20 @@
+{
+  "name": "@live-dealr/websocket",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@live-dealr/media": "workspace:*",
+    "@live-dealr/realtime": "workspace:*",
+    "@live-dealr/shared-types": "workspace:*",
+    "@live-dealr/table-controller": "workspace:*",
+    "@nestjs/common": "^11.1.6",
+    "@nestjs/websockets": "^11.1.6",
+    "@nestjs/platform-socket.io": "^11.1.6",
+    "rxjs": "^7.8.2",
+    "socket.io": "^4.8.1"
+  }
+}

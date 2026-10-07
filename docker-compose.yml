@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: dealr
+      POSTGRES_PASSWORD: dealr
+      POSTGRES_DB: live_dealr
+    ports:
+      - "5432:5432"
+    volumes:
+      - live_dealr_pg:/var/lib/postgresql/data
+
+volumes:
+  live_dealr_pg:

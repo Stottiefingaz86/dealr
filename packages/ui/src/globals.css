@@ -1,0 +1,447 @@
+@import "tailwindcss";
+
+@source "../../../apps/player/src/**/*.{ts,tsx}";
+@source "../../../apps/dealer-console/src/**/*.{ts,tsx}";
+@source "../../../apps/admin/src/**/*.{ts,tsx}";
+@source "./**/*.{ts,tsx}";
+
+@theme inline {
+  --color-background: #07070a;
+  --color-foreground: #f4efe6;
+  --color-card: #101017;
+  --color-card-foreground: #f4efe6;
+  --color-popover: #14141c;
+  --color-popover-foreground: #f4efe6;
+  --color-primary: #d7c4a3;
+  --color-primary-foreground: #14110c;
+  --color-secondary: #1c1c24;
+  --color-secondary-foreground: #f4efe6;
+  --color-muted: #1a1a22;
+  --color-muted-foreground: #a39a8c;
+  --color-accent: #24242e;
+  --color-accent-foreground: #f4efe6;
+  --color-destructive: #c45c5c;
+  --color-border: rgba(244, 239, 230, 0.08);
+  --color-input: rgba(244, 239, 230, 0.1);
+  --color-ring: #d7c4a3;
+  --radius-sm: 0.4rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1.1rem;
+  --radius-xl: 1.6rem;
+  --font-sans: var(--font-dealr-ui), "Helvetica Neue", sans-serif;
+  --font-display: var(--font-dealr-display), "Times New Roman", serif;
+  --font-ui: var(--font-dealr-ui), "Helvetica Neue", sans-serif;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html,
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-dealr-ui), "Helvetica Neue", sans-serif;
+}
+
+.font-display {
+  font-family: var(--font-dealr-display), "Times New Roman", serif;
+}
+
+.font-ui {
+  font-family: var(--font-dealr-ui), "Helvetica Neue", sans-serif;
+}
+
+.felt {
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(215, 196, 163, 0.12), transparent 55%),
+    radial-gradient(800px 500px at 50% 110%, rgba(20, 40, 36, 0.55), transparent 50%),
+    #07070a;
+}
+
+@keyframes dealr-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(6%, 4%, 0) scale(1.08);
+  }
+}
+
+@keyframes dealr-drift-alt {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-5%, -6%, 0) scale(1.06);
+  }
+}
+
+@keyframes hue-breathe {
+  0%,
+  100% {
+    opacity: 0.85;
+    filter: saturate(1);
+  }
+  50% {
+    opacity: 1;
+    filter: saturate(1.15);
+  }
+}
+
+@keyframes hue-lamp-left {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translate3d(4%, 3%, 0) scale(1.08);
+    opacity: 0.85;
+  }
+}
+
+@keyframes hue-lamp-right {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translate3d(-5%, 2%, 0) scale(1.1);
+    opacity: 0.8;
+  }
+}
+
+@keyframes mood-breathe {
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes mood-orb-a {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(12%, 8%, 0) scale(1.15);
+  }
+}
+
+@keyframes mood-orb-b {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-14%, -6%, 0) scale(1.12);
+  }
+}
+
+@keyframes mood-orb-c {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(6%, -10%, 0) scale(1.08);
+  }
+}
+
+@keyframes mood-sparkle {
+  0% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: translate3d(0, -4%, 0);
+    opacity: 0.35;
+  }
+}
+
+/* Hue colour picker track */
+.hue-slider {
+  appearance: none;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    hsl(0 90% 55%),
+    hsl(60 90% 55%),
+    hsl(120 90% 55%),
+    hsl(180 90% 55%),
+    hsl(240 90% 55%),
+    hsl(300 90% 55%),
+    hsl(360 90% 55%)
+  );
+}
+
+.hue-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: white;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+/* —— Slab surface —— */
+@keyframes slab-grid-flow {
+  from {
+    background-position: center 0, center 0;
+  }
+  to {
+    background-position: center 120px, center 0;
+  }
+}
+
+@keyframes slab-scan {
+  0% {
+    top: -14%;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.6;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+@keyframes slab-blob-a {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(18%, 12%) scale(1.15);
+  }
+}
+
+@keyframes slab-blob-b {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-16%, -10%) scale(1.1);
+  }
+}
+
+@keyframes slab-blob-c {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(10%, -14%) scale(1.2);
+  }
+}
+
+/* —— Virtual table surface —— */
+@keyframes table-grid-drift {
+  from {
+    background-position: 0 0, 0 0;
+  }
+  to {
+    background-position: 0 72px, 0 0;
+  }
+}
+
+@keyframes table-zone-pulse {
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: translateX(-50%) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.03);
+  }
+}
+
+@keyframes table-zone-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes table-sweep {
+  0% {
+    left: -35%;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  45% {
+    left: 105%;
+    opacity: 1;
+  }
+  46%,
+  100% {
+    left: 105%;
+    opacity: 0;
+  }
+}
+
+/* —— Background FX —— */
+@keyframes fx-flame-breathe {
+  0%,
+  100% {
+    transform: scaleY(1) translateY(0);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scaleY(1.12) translateY(-2%);
+    opacity: 1;
+  }
+}
+
+@keyframes fx-rise {
+  0% {
+    transform: translate3d(0, 10%, 0) scale(0.7);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate3d(8%, -110%, 0) scale(1.15);
+    opacity: 0;
+  }
+}
+
+@keyframes fx-ember {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.35;
+  }
+  50% {
+    transform: translate3d(12px, -28px, 0);
+    opacity: 0.95;
+  }
+}
+
+@keyframes fx-aurora {
+  0%,
+  100% {
+    transform: translateX(-4%) skewX(-2deg);
+    opacity: 0.7;
+  }
+  50% {
+    transform: translateX(6%) skewX(3deg);
+    opacity: 1;
+  }
+}
+
+@keyframes fx-twinkle {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.2);
+  }
+}
+
+@keyframes fx-rain {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 18px 48px;
+  }
+}
+
+@keyframes fx-neon-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes fx-neon-scan {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateX(-8%);
+  }
+  50% {
+    opacity: 0.85;
+    transform: translateX(8%);
+  }
+}
+
+@keyframes slab-hue-spin {
+  from {
+    filter: hue-rotate(0deg);
+  }
+  to {
+    filter: hue-rotate(360deg);
+  }
+}
+
+@keyframes table-ripple {
+  0% {
+    transform: translate(-50%, -50%) scale(0.3);
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.1);
+    opacity: 0;
+  }
+}
+
+@keyframes table-dust {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(-2.5%, -4%, 0);
+  }
+  100% {
+    transform: translate3d(0, -8%, 0);
+  }
+}
+
+@keyframes eq-bar {
+  from {
+    transform: scaleY(0.3);
+  }
+  to {
+    transform: scaleY(1.4);
+  }
+}

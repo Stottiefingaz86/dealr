@@ -1,0 +1,30 @@
+{
+  "name": "@live-dealr/dealer-console",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3001",
+    "build": "next build",
+    "start": "next start --port 3001"
+  },
+  "dependencies": {
+    "@live-dealr/physical-game-events": "workspace:*",
+    "@live-dealr/realtime": "workspace:*",
+    "@live-dealr/shared-types": "workspace:*",
+    "@live-dealr/ui": "workspace:*",
+    "framer-motion": "^12.23.12",
+    "next": "16.4.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@live-dealr/typescript-config": "workspace:*",
+    "@tailwindcss/postcss": "^4.1.13",
+    "@types/node": "^24.6.0",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "tailwindcss": "^4.1.13",
+    "typescript": "^5.9.3"
+  }
+}
