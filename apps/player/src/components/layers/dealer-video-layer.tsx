@@ -6,7 +6,7 @@ import { ChromaKeyVideo, type ChromaKeyOptions } from "./chroma-key-video";
 export type FeedStatus = "idle" | "loading" | "live" | "error";
 
 /** Desktop framing of the dealer canvas, in viewport %. Shared with the table reflection. */
-export const DEALER_FRAME = { top: 6, height: 74 };
+export const DEALER_FRAME = { top: 9, height: 68 };
 /** Portrait-phone feed width as a multiple of the viewport width. */
 export const PHONE_CROP = 1.25;
 /** Portrait-phone feed top as a fraction of the viewport height — pushes the table to mid-screen. */
@@ -17,6 +17,9 @@ export const PHONE_TOP = 0.2;
  * the feed (table plane, seats, reflection) derives from this one rectangle so the
  * overlay follows the camera framing instead of re-flowing with the viewport —
  * real cards on a real table don't move when you rotate your phone.
+ *
+ * Desktop stays a centred 16:9 letterbox sized by viewport height — do not grow
+ * toward ultrawide width; that blew up the felt and buried pads under the UI.
  */
 export function dealerFrameFor(w: number, h: number) {
   if (w <= 640) {
@@ -26,14 +29,9 @@ export function dealerFrameFor(w: number, h: number) {
     const height = (width * 9) / 16;
     return { left: (w - width) / 2, top: h * PHONE_TOP, width, height };
   }
-  // Prefer a tall 16:9 feed. On ultrawide, grow toward ~90% of width so the
-  // table isn't a postage stamp between black letterbox bars.
-  const heightFromViewport = (h * DEALER_FRAME.height) / 100;
-  const widthFromHeight = (heightFromViewport * 16) / 9;
-  const width = Math.min(w * 0.92, Math.max(widthFromHeight, Math.min(w * 0.78, (h * 0.88 * 16) / 9)));
-  const height = (width * 9) / 16;
-  const top = Math.max(h * 0.04, Math.min((h * DEALER_FRAME.top) / 100, h - height - h * 0.02));
-  return { left: (w - width) / 2, top, width, height };
+  const height = (h * DEALER_FRAME.height) / 100;
+  const width = (height * 16) / 9;
+  return { left: (w - width) / 2, top: (h * DEALER_FRAME.top) / 100, width, height };
 }
 
 export type DealerFrame = ReturnType<typeof dealerFrameFor>;

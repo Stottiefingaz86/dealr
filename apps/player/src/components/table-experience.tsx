@@ -736,12 +736,13 @@ function SeatDock({
   trailing?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const bottomSafe = "max(0.85rem, env(safe-area-inset-bottom))";
+  // Keep clear of Missions / chat ghosts and the home indicator.
+  const bottomSafe = "max(4.25rem, calc(env(safe-area-inset-bottom) + 3.25rem))";
   const seatStyle =
     spot != null
       ? {
           left: `${spot.x}%`,
-          top: `min(calc(${spot.y}% + ${dropPx}px), calc(100% - 52px - ${bottomSafe}))`,
+          top: `min(calc(${spot.y}% + ${dropPx}px), calc(100% - 4.5rem - env(safe-area-inset-bottom, 0px)))`,
           transform: "translate(-50%, -50%)",
         }
       : undefined;

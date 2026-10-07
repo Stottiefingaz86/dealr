@@ -49,19 +49,20 @@ const PLANE_V_COMPACT = { left: 0.02, width: 0.96, top: 0.72, height: 0.94 };
  * Seat 1 = local (centre). Desktop arc uses the full slab; phone arc is tighter
  * so every hand stays on-screen (no off-table crop).
  */
+/** Local seat sits a bit higher so the pad clears the bottom chip tray. */
 const SEAT_POS: ReadonlyArray<readonly [number, number]> = [
-  [50, 48],
-  [32, 44],
-  [68, 44],
-  [16, 38],
-  [84, 38],
+  [50, 40],
+  [30, 38],
+  [70, 38],
+  [14, 34],
+  [86, 34],
 ];
 const SEAT_POS_COMPACT: ReadonlyArray<readonly [number, number]> = [
-  [50, 52],
-  [34, 48],
-  [66, 48],
-  [20, 42],
-  [80, 42],
+  [50, 44],
+  [32, 42],
+  [68, 42],
+  [18, 38],
+  [82, 38],
 ];
 const DEALER = { x: 50, y: 12 };
 /** How long the bet pad takes to open, swallow the chips and close. */
@@ -140,9 +141,8 @@ export function TableScene({
   const frame: DealerFrame = ready
     ? dealerFrameFor(w, h)
     : { left: 0, top: 0, width: 0, height: 0 };
-  // Everything on the slab scales with the feed, so a 390px phone shows the same
-  // table at ~0.7× rather than a re-flowed layout. Cap used to sit at 1.15 — on
-  // large / 4K monitors that left fingernail cards on a stadium-sized table.
+  // Scale with the feed so phones shrink and desktops stay readable — but keep a
+  // modest cap. Tracking ultrawide frame width at 2×+ made pads swallow the UI.
   const cropped = ready && w <= 640;
   useEffect(() => {
     setSeatLayoutCompact(cropped);
@@ -151,8 +151,8 @@ export function TableScene({
 
   const unit = ready
     ? Math.max(
-        cropped ? 0.55 : 0.7,
-        Math.min(cropped ? 1.0 : 2.45, frame.width / REFERENCE_FRAME_WIDTH),
+        cropped ? 0.55 : 0.75,
+        Math.min(cropped ? 0.95 : 1.35, frame.width / REFERENCE_FRAME_WIDTH),
       )
     : 1;
   const planeV = cropped ? PLANE_V_COMPACT : PLANE_V;
