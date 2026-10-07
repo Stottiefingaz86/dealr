@@ -64,8 +64,9 @@ import { speakHandTotal, speakRewardCongrats, speakTipThanks } from "@/lib/deale
 
 type ActionBurst = { action: PlayerActionType; id: string };
 
-/** Extra drop below the seat tag for the action dock (hit/stand). */
-const ACTION_DOCK_DROP_PX = 56;
+/** Drop below the seat tag so trays clear the bet pad / cards. */
+const BET_DOCK_DROP_PX = 72;
+const ACTION_DOCK_DROP_PX = 64;
 
 export type TableExperienceProps = {
   /** Override for live/friends tables where your id isn't the demo DEFAULT_PLAYER_ID. */
@@ -536,12 +537,13 @@ export function TableExperience({
         </header>
       </div>
 
-      {/* Chips sit on a bottom tray so they never cover the bet pad. Actions hang under your seat. */}
+      {/* Tray hangs under your seat pad — pill centred on the seat, sides wing out. */}
       <AnimatePresence mode="wait">
         {betting ? (
           <SeatDock
             key="bets-dock"
-            placement="bottom"
+            spot={localSpot}
+            dropPx={BET_DOCK_DROP_PX}
             seconds={bettingRemaining}
             leading={
               <DockButton label="Undo bet" onClick={clearBet} disabled={totalBet === 0}>
@@ -716,7 +718,6 @@ export function TableExperience({
 
 function SeatDock({
   spot,
-  placement = "seat",
   dropPx = ACTION_DOCK_DROP_PX,
   seconds,
   urgent = false,
@@ -725,9 +726,7 @@ function SeatDock({
   trailing,
   children,
 }: {
-  spot?: { x: number; y: number };
-  /** `bottom` = chip tray clear of the pad; `seat` = under your hand for actions. */
-  placement?: "seat" | "bottom";
+  spot: { x: number; y: number };
   dropPx?: number;
   seconds: number | null;
   urgent?: boolean;
@@ -736,29 +735,18 @@ function SeatDock({
   trailing?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  // Keep clear of Missions / chat ghosts and the home indicator.
-  const bottomSafe = "max(4.5rem, calc(env(safe-area-inset-bottom) + 3.5rem))";
-  const seatStyle =
-    spot != null
-      ? {
-          left: `${spot.x}%`,
-          top: `min(calc(${spot.y}% + ${dropPx}px), calc(100% - 4.5rem - env(safe-area-inset-bottom, 0px)))`,
-          transform: "translate(-50%, -50%)",
-        }
-      : undefined;
-  const bottomStyle = {
-    left: "50%",
-    bottom: bottomSafe,
-    top: "auto",
-    transform: "translateX(-50%)",
+  // Pill on the seat centre line; wings don't shift it. Clamp so we never clip
+  // under the home indicator / missions row.
+  const style = {
+    left: `${spot.x}%`,
+    top: `min(calc(${spot.y}% + ${dropPx}px), calc(100% - 5.25rem - env(safe-area-inset-bottom, 0px)))`,
+    transform: "translate(-50%, -50%)",
   };
 
-  // Pill stays on the true centre line; side buttons wing out so they don't
-  // shove the tray off-centre (which made the bet pad look sandwiched).
   return (
     <motion.div
       className="pointer-events-none absolute z-40 flex flex-col items-center gap-1.5"
-      style={placement === "bottom" ? bottomStyle : seatStyle}
+      style={style}
       initial={{ opacity: 0, scale: 0.85 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.16 } }}
