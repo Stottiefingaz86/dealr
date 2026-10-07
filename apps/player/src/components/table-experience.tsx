@@ -244,7 +244,7 @@ export function TableExperience() {
         onAvatarClick: () => {
           if (isLocal) {
             setPlayerMenu(null);
-            reactions.setMenuOpen(!reactions.menuOpen);
+            reactions.toggleMenu();
             return;
           }
           if (!player) {
@@ -332,12 +332,12 @@ export function TableExperience() {
         {reactions.menuOpen ? (
           <AvatarReactionMenu
             open={reactions.menuOpen}
-            onClose={() => reactions.setMenuOpen(false)}
+            onClose={() => reactions.closeMenu()}
             localSpot={localSpot}
             seats={seatTargets}
             unlocks={unlocks}
             onLocked={() => {
-              reactions.setMenuOpen(false);
+              reactions.closeMenu();
               setPanel("rewards");
             }}
             onEmote={(emoji) => {

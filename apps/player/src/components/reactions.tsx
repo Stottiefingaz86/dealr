@@ -185,7 +185,17 @@ export function AvatarReactionMenu({
       setDrag((d) => (d ? { ...d, x: e.clientX, y: e.clientY } : null));
     };
     const onUp = (e: PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
       finishDrag(e.clientX, e.clientY);
+      // Swallow the ghost click that browsers synthesize after pointerup.
+      const swallow = (ev: Event) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        window.removeEventListener("click", swallow, true);
+      };
+      window.addEventListener("click", swallow, true);
+      window.setTimeout(() => window.removeEventListener("click", swallow, true), 0);
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
@@ -202,6 +212,11 @@ export function AvatarReactionMenu({
     e.stopPropagation();
     dragEmoji.current = emoji;
     setDrag({ emoji, x: e.clientX, y: e.clientY });
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Some browsers reject capture mid-gesture — window listeners still cover us.
+    }
   }
 
   if (!open && !drag) {
@@ -574,6 +589,24 @@ export function useReactions() {
   const [throws, setThrows] = useState<FlyingThrow[]>([]);
   const [emotes, setEmotes] = useState<LocalEmote[]>([]);
   const [impacts, setImpacts] = useState<Impact[]>([]);
+  /** Blocks the synthetic click that follows a throw pointerup from reopening the menu. */
+  const suppressOpenUntil = useRef(0);
+
+  const closeMenu = useCallback(() => {
+    suppressOpenUntil.current = Date.now() + 500;
+    setMenuOpen(false);
+  }, []);
+
+  const toggleMenu = useCallback(() => {
+    setMenuOpen((open) => {
+      if (open) {
+        suppressOpenUntil.current = Date.now() + 200;
+        return false;
+      }
+      if (Date.now() < suppressOpenUntil.current) return false;
+      return true;
+    });
+  }, []);
 
   const spawnEmote = useCallback((emoji: string, at: TableSpot) => {
     const id = `e-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -598,6 +631,8 @@ export function useReactions() {
   return {
     menuOpen,
     setMenuOpen,
+    closeMenu,
+    toggleMenu,
     throws,
     emotes,
     impacts,
