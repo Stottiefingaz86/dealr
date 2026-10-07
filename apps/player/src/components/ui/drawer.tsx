@@ -8,6 +8,7 @@ export function Drawer({
   shouldScaleBackground = false,
   direction = "bottom",
   dismissible = true,
+  modal = true,
   ...props
 }: React.ComponentProps<typeof DrawerPrimitive.Root> & {
   direction?: "top" | "bottom" | "left" | "right";
@@ -17,6 +18,7 @@ export function Drawer({
       shouldScaleBackground={shouldScaleBackground}
       direction={direction}
       dismissible={dismissible}
+      modal={modal}
       {...props}
     />
   );

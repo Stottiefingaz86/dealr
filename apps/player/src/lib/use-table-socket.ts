@@ -178,7 +178,11 @@ export function useTableSocket(opts?: { enabled?: boolean }) {
       });
     },
     follow: (next: boolean) => {
-      // Following is client-side store state; the socket call is fire-and-forget on API hosts.
+      if (demoRef.current) {
+        demoRef.current.follow(next);
+        return;
+      }
+      // Nest gateway posts the follow chat event for everyone at the table.
       socketRef.current?.emit(ClientEvents.followDealer, {
         playerId: DEFAULT_PLAYER_ID,
         follow: next,

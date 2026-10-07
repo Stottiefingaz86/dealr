@@ -43,12 +43,15 @@ export function ChatDrawer({
       direction={direction}
       shouldScaleBackground={false}
       dismissible={false}
+      modal={false}
     >
       <DrawerContent
+        showOverlay={false}
         className={cn(
-          "border-white/8 bg-[#121218]",
+          "pointer-events-auto border-white/8 bg-[#121218]/96 shadow-[0_-12px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl",
           direction === "bottom"
-            ? "inset-x-0 bottom-0 h-[78dvh] max-h-[78dvh] rounded-t-[14px]"
+            ? // Keep table actions reachable above the sheet while chatting.
+              "inset-x-0 bottom-0 h-[min(42dvh,22rem)] max-h-[42dvh] rounded-t-[14px]"
             : "inset-y-0 right-0 h-full w-full max-w-sm border-l",
         )}
       >

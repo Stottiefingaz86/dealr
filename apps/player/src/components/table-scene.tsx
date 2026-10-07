@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { Lock } from "lucide-react";
 import { ANIMATION_INTENSITY } from "@live-dealr/environments";
 import type {
   Card,
@@ -39,34 +40,52 @@ const PERSPECTIVE = 1250;
 /**
  * The table slab, expressed in *dealer-feed units* (fractions of the video frame's
  * width/height, before tilt). Anchoring to the feed — not the viewport — means the
- * overlay stays glued to where the real table and real cards are in the camera
- * shot. On phones the feed is cropped, so the outer seats simply fall off-screen,
- * exactly as they would on a real camera.
+ * overlay stays glued to where the real table and real cards are in the camera shot.
  */
 const PLANE_V = { left: -0.09, width: 1.18, top: 0.72, height: 0.94 };
+/** Tighter slab on phones so all 5 seats stay inside the cropped feed. */
+const PLANE_V_COMPACT = { left: 0.02, width: 0.96, top: 0.72, height: 0.94 };
 
-/** Seat 1 = local (centre). Shallow arc across the slab: [x%, y%]. */
+/**
+ * Seat 1 = local (centre). Desktop arc uses the full slab; phone arc is tighter
+ * so every hand stays on-screen (no off-table crop).
+ */
 const SEAT_POS: ReadonlyArray<readonly [number, number]> = [
-  [50, 43],
-  [31, 41],
-  [69, 41],
-  [13, 34],
-  [87, 34],
+  [50, 48],
+  [32, 44],
+  [68, 44],
+  [16, 38],
+  [84, 38],
+];
+const SEAT_POS_COMPACT: ReadonlyArray<readonly [number, number]> = [
+  [50, 52],
+  [34, 48],
+  [66, 48],
+  [20, 42],
+  [80, 42],
 ];
 const DEALER = { x: 50, y: 12 };
 /** How long the bet pad takes to open, swallow the chips and close. */
 const PAD_CLOSE_SECONDS = 1.2;
 
+let compactSeats = false;
+
+/** Used by docks / throw aiming that sample seat layout outside the scene. */
+export function setSeatLayoutCompact(compact: boolean) {
+  compactSeats = compact;
+}
+
 export function seatGeometry(seat: number) {
-  const [x, y] = SEAT_POS[seat - 1] ?? [50, 56];
+  const layout = compactSeats ? SEAT_POS_COMPACT : SEAT_POS;
+  const [x, y] = layout[seat - 1] ?? [50, 56];
   // Slight inward lean for the outer seats so cards point at the dealer.
-  const angle = (x - 50) * 0.4;
+  const angle = (x - 50) * 0.35;
   return {
     angle,
     spot: { x, y },
     cards: { x, y },
     // Identity tag (avatar + name + bet) sits just in front of the hand.
-    tag: { x, y: y + 15 },
+    tag: { x, y: y + 14 },
   };
 }
 
@@ -124,14 +143,22 @@ export function TableScene({
     : { left: 0, top: 0, width: 0, height: 0 };
   // Everything on the slab scales with the feed, so a 390px phone shows the same
   // table at ~0.7× rather than a re-flowed layout.
-  const unit = ready ? Math.min(1.15, Math.max(0.5, frame.width / REFERENCE_FRAME_WIDTH)) : 1;
-  const plane = {
-    left: frame.left + frame.width * PLANE_V.left,
-    width: frame.width * PLANE_V.width,
-    top: frame.top + frame.height * PLANE_V.top,
-    height: frame.height * PLANE_V.height,
-  };
   const cropped = ready && w <= 640;
+  useEffect(() => {
+    setSeatLayoutCompact(cropped);
+    return () => setSeatLayoutCompact(false);
+  }, [cropped]);
+
+  const unit = ready
+    ? Math.min(cropped ? 0.95 : 1.15, Math.max(0.5, frame.width / REFERENCE_FRAME_WIDTH))
+    : 1;
+  const planeV = cropped ? PLANE_V_COMPACT : PLANE_V;
+  const plane = {
+    left: frame.left + frame.width * planeV.left,
+    width: frame.width * planeV.width,
+    top: frame.top + frame.height * planeV.top,
+    height: frame.height * planeV.height,
+  };
 
   return (
     <div
@@ -733,6 +760,7 @@ function Seat({
 }) {
   const geo = seatGeometry(model.seat);
   const sc = scale;
+  const vacant = !model.displayName && !model.isLocal;
   const name = model.displayName ?? (model.isLocal ? "You" : "");
   const hasBet = model.chips.length > 0;
 
@@ -747,15 +775,28 @@ function Seat({
               ? "radial-gradient(ellipse at 50% 50%, rgba(240,196,58,0.3), rgba(240,196,58,0.08) 55%, transparent 72%)"
               : model.isLocal
                 ? `radial-gradient(ellipse at 50% 50%, hsla(${hue}, 80%, 65%, 0.26), hsla(${hue}, 80%, 65%, 0.06) 55%, transparent 72%)`
-                : `radial-gradient(ellipse at 50% 50%, hsla(${hue}, 70%, 65%, 0.16), hsla(${hue}, 70%, 65%, 0.03) 55%, transparent 72%)`,
+                : vacant
+                  ? "radial-gradient(ellipse at 50% 50%, rgba(255,255,255,0.05), transparent 68%)"
+                  : `radial-gradient(ellipse at 50% 50%, hsla(${hue}, 70%, 65%, 0.16), hsla(${hue}, 70%, 65%, 0.03) 55%, transparent 72%)`,
           }}
           transition={{ duration: 0.6 }}
         />
       </FlatGroup>
 
+      {/* Vacant seats: whisper of a ring outside betting; locked pad only while bets are open */}
+      {vacant && !betting ? (
+        <FlatGroup x={geo.spot.x} y={geo.spot.y} scale={sc}>
+          <div
+            className="size-[52px] rounded-full"
+            style={{ boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.08)" }}
+            aria-hidden
+          />
+        </FlatGroup>
+      ) : null}
+
       {/* AR bet pad — materialises for betting, opens + swallows chips when the round starts */}
       <AnimatePresence>
-        {betting ? (
+        {betting && !vacant ? (
           <FlatGroup
             key="pad"
             x={geo.spot.x}
@@ -858,6 +899,26 @@ function Seat({
             </motion.button>
           </FlatGroup>
         ) : null}
+
+        {/* Locked vacant spots while betting — small badge, not a fake bet pad */}
+        {betting && vacant ? (
+          <FlatGroup key="locked" x={geo.spot.x} y={geo.spot.y} scale={sc}>
+            <motion.div
+              className="flex size-[44px] items-center justify-center rounded-full"
+              style={{
+                background: "rgba(10,10,14,0.55)",
+                boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.1), 0 4px 14px rgba(0,0,0,0.4)",
+              }}
+              initial={{ scale: 0.5, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.6, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 280, damping: 24 }}
+              aria-label="Seat locked"
+            >
+              <Lock className="size-3.5 text-white/30" strokeWidth={2} aria-hidden />
+            </motion.div>
+          </FlatGroup>
+        ) : null}
       </AnimatePresence>
 
       {/* Chips stack on the spot; fall through when the pad opens */}
@@ -893,80 +954,87 @@ function Seat({
         <CardFan cards={model.cards} size="md" total={model.handTotal} />
       </FlatGroup>
 
-      {/* Identity tag — avatar + name + wager, centred under the hand. One thing to read. */}
-      <Standee x={geo.tag.x} y={geo.tag.y} scale={sc} className="pointer-events-auto">
-        <div
-          className="relative flex flex-col items-center"
-          data-seat-drop={model.seat}
-          data-seat-anchor={model.seat}
-          style={{ transformStyle: "flat", visibility: model.hideTag ? "hidden" : "visible" }}
-        >
-          <div className="pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2">
-            <SeatActionBurst
-              action={model.actionBurst?.action ?? null}
-              burstId={model.actionBurst?.id ?? null}
-            />
-          </div>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              model.onAvatarClick();
-            }}
-            aria-label={model.isLocal ? "Your reactions" : `${name} profile`}
-            className={`relative flex items-center gap-1.5 whitespace-nowrap rounded-full border py-[3px] pl-[3px] pr-2.5 shadow-[0_8px_20px_rgba(0,0,0,0.6)] ${
-              model.isActing
-                ? "border-[#f0c43a]/80 bg-[#1c170a]"
-                : model.menuOpen
-                  ? "border-[#f0c43a]/80 bg-[#0d0d13]"
-                  : model.isLocal
-                    ? "border-[#f0c43a]/45 bg-[#0d0d13]"
-                    : "border-white/15 bg-[#0d0d13]"
-            }`}
+      {/* Identity tag — seated players only. Vacant seats stay quiet (no Open / ? pills). */}
+      {!vacant ? (
+        <Standee x={geo.tag.x} y={geo.tag.y} scale={sc} className="pointer-events-auto">
+          <div
+            className="relative flex flex-col items-center"
+            data-seat-drop={model.seat}
+            data-seat-anchor={model.seat}
+            style={{ transformStyle: "flat", visibility: model.hideTag ? "hidden" : "visible" }}
           >
-            <span className="relative flex size-[30px] items-center justify-center">
-              <AnimatePresence>
-                {model.isActing ? (
-                  <TurnOrb
-                    progress={model.turnProgress}
-                    seconds={model.turnSeconds}
-                    avatarSize={28}
-                  />
-                ) : null}
-              </AnimatePresence>
-              <PlayerAvatar
-                name={name || "?"}
-                src={model.avatarUrl}
-                isLocal={model.isLocal}
-                isActing={model.isActing}
-                size={28}
+            <div className="pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2">
+              <SeatActionBurst
+                action={model.actionBurst?.action ?? null}
+                burstId={model.actionBurst?.id ?? null}
               />
-            </span>
-            <span
-              className={`max-w-[5.5rem] truncate text-[11px] leading-none ${
-                model.isLocal || model.isActing
-                  ? "font-semibold text-[#f0c43a]"
-                  : "font-medium text-white/90"
+            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                model.onAvatarClick();
+              }}
+              aria-label={model.isLocal ? "Your reactions" : `${name} profile`}
+              className={`relative flex items-center gap-1.5 whitespace-nowrap rounded-full border py-[3px] pl-[3px] pr-2.5 shadow-[0_8px_20px_rgba(0,0,0,0.6)] ${
+                model.isActing
+                  ? "border-[#f0c43a]/80 bg-[#1c170a]"
+                  : model.menuOpen
+                    ? "border-[#f0c43a]/80 bg-[#0d0d13]"
+                    : model.isLocal
+                      ? "border-[#f0c43a]/45 bg-[#0d0d13]"
+                      : "border-white/15 bg-[#0d0d13]"
               }`}
             >
-              {name}
-            </span>
-            <AnimatePresence>
-              {model.bet > 0 ? (
-                <motion.span
-                  key="bet"
-                  className="text-[11px] font-semibold tabular-nums leading-none text-white"
-                  initial={{ opacity: 0, x: -4 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0 }}
-                >
-                  ${model.bet}
-                </motion.span>
-              ) : null}
-            </AnimatePresence>
-          </button>
-        </div>
-      </Standee>
+              <span className="relative flex size-[30px] items-center justify-center">
+                <AnimatePresence>
+                  {model.isActing ? (
+                    <TurnOrb
+                      progress={model.turnProgress}
+                      seconds={model.turnSeconds}
+                      avatarSize={28}
+                    />
+                  ) : null}
+                </AnimatePresence>
+                <PlayerAvatar
+                  name={name || "?"}
+                  src={model.avatarUrl}
+                  isLocal={model.isLocal}
+                  isActing={model.isActing}
+                  size={28}
+                />
+              </span>
+              <span
+                className={`max-w-[5.5rem] truncate text-[11px] leading-none ${
+                  model.isLocal || model.isActing
+                    ? "font-semibold text-[#f0c43a]"
+                    : "font-medium text-white/90"
+                }`}
+              >
+                {name}
+              </span>
+              <AnimatePresence>
+                {model.bet > 0 ? (
+                  <motion.span
+                    key="bet"
+                    className="text-[11px] font-semibold tabular-nums leading-none text-white"
+                    initial={{ opacity: 0, x: -4 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    ${model.bet}
+                  </motion.span>
+                ) : null}
+              </AnimatePresence>
+            </button>
+          </div>
+        </Standee>
+      ) : (
+        /* Anchor only — throws/menus still resolve seat geometry for empty pads */
+        <Standee x={geo.tag.x} y={geo.tag.y} scale={sc}>
+          <div data-seat-drop={model.seat} data-seat-anchor={model.seat} className="size-1 opacity-0" />
+        </Standee>
+      )}
     </>
   );
 }

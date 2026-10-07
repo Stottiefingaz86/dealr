@@ -143,7 +143,8 @@ export function playBetConfirm() {
 
 /**
  * Confetti celebrate / reward claim — BOL-shadcn redeem sample.
- * Soft single play (debounced) — BOL uses ~0.7; we keep it gentler.
+ * Sample peaks ~-17 dB, so gain sits above BOL's 0.7 HTML volume to land
+ * at a clear mid level (debounced — one play per claim).
  */
 let lastRedeemAt = 0;
 
@@ -158,7 +159,10 @@ export function playRedeemSfx() {
   if (now - lastRedeemAt < 400) return;
   lastRedeemAt = now;
 
-  const level = Math.max(0.35, Math.max(sfxLevels.table, sfxLevels.social));
+  const level = Math.max(0.55, Math.max(sfxLevels.table, sfxLevels.social));
+  const webGain = 1.65 * level;
+  const htmlVol = Math.min(1, 0.85 * level);
+
   const buf = buffers.get("redeem");
   if (buf) {
     const ac = getContext();
@@ -166,7 +170,7 @@ export function playRedeemSfx() {
     const source = ac.createBufferSource();
     source.buffer = buf;
     const gain = ac.createGain();
-    gain.gain.value = 0.7 * level;
+    gain.gain.value = webGain;
     source.connect(gain);
     gain.connect(ac.destination);
     source.start(0);
@@ -180,7 +184,7 @@ export function playRedeemSfx() {
       const source = ac.createBufferSource();
       source.buffer = ready;
       const gain = ac.createGain();
-      gain.gain.value = 0.7 * level;
+      gain.gain.value = webGain;
       source.connect(gain);
       gain.connect(ac.destination);
       source.start(0);
@@ -188,7 +192,7 @@ export function playRedeemSfx() {
     }
     try {
       const audio = new Audio("/sounds/redeem.wav");
-      audio.volume = Math.min(1, 0.55 * level);
+      audio.volume = htmlVol;
       void audio.play().catch(() => undefined);
     } catch {
       // non-critical

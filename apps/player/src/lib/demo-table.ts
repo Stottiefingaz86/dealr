@@ -162,6 +162,20 @@ export class DemoTable {
     });
   }
 
+  follow(next: boolean): void {
+    if (!next) return;
+    const state = this.runtime.getState();
+    this.sinks.onChat({
+      id: `demo-follow-${Date.now()}`,
+      tableId: DEFAULT_TABLE_ID,
+      senderId: DEFAULT_PLAYER_ID,
+      senderName: "You",
+      text: `followed ${state.dealer.profile.displayName}`,
+      kind: "follow",
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   claimReward(payload: {
     missionId: string;
     missionTitle: string;

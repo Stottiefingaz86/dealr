@@ -23,6 +23,17 @@ import { DEALER_POSTS } from "@live-dealr/websocket/bot-crowd";
 const AUTO_DEAL_MS = 550;
 const PEER_PREFIX = "dealr-live-";
 
+/** STUN helps friends behind home NATs (3rd+ join was failing on default PeerJS). */
+const PEER_OPTS = {
+  debug: 0 as const,
+  config: {
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun1.l.google.com:19302" },
+    ],
+  },
+};
+
 export function peerIdForRoom(code: string): string {
   return `${PEER_PREFIX}${code.toLowerCase()}`;
 }
@@ -48,6 +59,7 @@ export type LiveWire =
   | { t: "tip"; amount: number }
   | { t: "sendChat"; text: string }
   | { t: "sendReaction"; kind: ReactionKind; emoji: string; toSeat: number | null }
+  | { t: "follow"; following: boolean }
   | { t: "claimReward"; missionId: string; missionTitle: string; amount: number; unlockLabel?: string };
 
 export type LiveSinks = {
@@ -101,7 +113,7 @@ export class LiveHost {
     this.sinks.onState(this.runtime.getState());
 
     await new Promise<void>((resolve, reject) => {
-      const peer = new Peer(peerIdForRoom(this.roomCode), { debug: 0 });
+      const peer = new Peer(peerIdForRoom(this.roomCode), PEER_OPTS);
       this.peer = peer;
       peer.on("open", () => {
         this.sinks.onStatus("Table live — share the link");
@@ -148,18 +160,21 @@ export class LiveHost {
   }
 
   private onGuest(conn: DataConnection) {
-    conn.on("open", () => {
-      /* wait for hello */
-    });
+    // Accept immediately — PeerJS can drop the 3rd link if we wait to wire handlers.
     conn.on("data", (raw) => this.onGuestMessage(conn, raw as LiveWire));
     conn.on("close", () => {
       for (const [id, c] of this.conns) {
         if (c === conn) {
           this.conns.delete(id);
           this.runtime?.releaseSeat(id);
+          this.broadcast({ t: "state", state: this.runtime!.getState() });
+          this.announce("A seat opened up");
           break;
         }
       }
+    });
+    conn.on("error", () => {
+      /* closed via close handler */
     });
   }
 
@@ -216,6 +231,18 @@ export class LiveHost {
             "chat",
           );
           break;
+        case "follow": {
+          if (!msg.following) break;
+          const state = this.runtime.getState();
+          const name = state.players.find((p) => p.id === playerId)?.displayName ?? "Player";
+          this.announceChat(
+            playerId,
+            name,
+            `followed ${state.dealer.profile.displayName}`,
+            "follow",
+          );
+          break;
+        }
         case "sendReaction": {
           const me = this.runtime.getState().players.find((p) => p.id === playerId);
           const reaction: ReactionMessage = {
@@ -335,6 +362,9 @@ export class LiveHost {
   sendChat(text: string) {
     this.handleAction(this.playerId, { t: "sendChat", text });
   }
+  follow(next: boolean) {
+    this.handleAction(this.playerId, { t: "follow", following: next });
+  }
 }
 
 export class LiveGuest {
@@ -367,28 +397,63 @@ export class LiveGuest {
   async start(): Promise<void> {
     this.sinks.onStatus("Connecting…");
     await new Promise<void>((resolve, reject) => {
-      const peer = new Peer({ debug: 0 });
+      const peer = new Peer(PEER_OPTS);
       this.peer = peer;
+      let settled = false;
+      const fail = (message: string) => {
+        if (settled) return;
+        settled = true;
+        this.sinks.onError(message);
+        reject(new Error(message));
+      };
       peer.on("error", (err) => {
-        this.sinks.onError(err.message || "Connection failed");
-        reject(err);
+        fail(err.message || "Connection failed");
       });
       peer.on("open", () => {
-        const conn = peer.connect(peerIdForRoom(this.roomCode), { reliable: true });
-        this.conn = conn;
-        conn.on("open", () => {
-          send(conn, {
-            t: "hello",
-            name: this.name,
-            playerId: this.playerId,
-            avatarUrl: this.avatarUrl,
+        const hostId = peerIdForRoom(this.roomCode);
+        let attempt = 0;
+        const connect = () => {
+          attempt += 1;
+          this.sinks.onStatus(attempt > 1 ? `Retrying join (${attempt}/4)…` : "Connecting…");
+          const conn = peer.connect(hostId, { reliable: true, serialization: "json" });
+          this.conn = conn;
+          const timer = window.setTimeout(() => {
+            if (conn.open || settled) return;
+            try {
+              conn.close();
+            } catch {
+              /* ignore */
+            }
+            if (attempt < 4) connect();
+            else fail("Table didn’t answer — ask the host to keep the page open");
+          }, 9000);
+          conn.on("open", () => {
+            window.clearTimeout(timer);
+            send(conn, {
+              t: "hello",
+              name: this.name,
+              playerId: this.playerId,
+              avatarUrl: this.avatarUrl,
+            });
+            this.sinks.onStatus("Joined table");
+            if (!settled) {
+              settled = true;
+              resolve();
+            }
           });
-          this.sinks.onStatus("Joined table");
-          resolve();
-        });
-        conn.on("data", (raw) => this.onHostMessage(raw as LiveWire));
-        conn.on("close", () => this.sinks.onError("Host left the table"));
-        conn.on("error", (err) => this.sinks.onError(err.message || "Link dropped"));
+          conn.on("data", (raw) => this.onHostMessage(raw as LiveWire));
+          conn.on("close", () => {
+            if (!settled) return;
+            this.sinks.onError("Host left the table");
+          });
+          conn.on("error", (err) => {
+            window.clearTimeout(timer);
+            if (settled) this.sinks.onError(err.message || "Link dropped");
+            else if (attempt < 4) connect();
+            else fail(err.message || "Could not join table");
+          });
+        };
+        connect();
       });
     });
   }
@@ -470,6 +535,9 @@ export class LiveGuest {
       timestamp: new Date().toISOString(),
     });
     this.emit({ t: "sendChat", text: trimmed });
+  }
+  follow(next: boolean) {
+    this.emit({ t: "follow", following: next });
   }
 }
 

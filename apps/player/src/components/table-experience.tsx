@@ -19,7 +19,7 @@ import {
 } from "./layers/dealer-video-layer";
 import { MoodOverlay } from "./layers/mood-overlay";
 import { BackgroundEffects } from "./layers/background-effects";
-import { TableScene, type SceneSeat } from "./table-scene";
+import { seatGeometry, TableScene, type SceneSeat } from "./table-scene";
 import { ChipTray } from "./chip-tray";
 import { ActionRing } from "./action-ring";
 import { StreamChat } from "./stream-chat";
@@ -296,52 +296,45 @@ export function TableExperience({
   }
 
   const localSeat = localPlayer?.seat ?? 1;
-  const sceneSeats: SceneSeat[] = [1, 2, 3, 4, 5].flatMap((seat) => {
+  // Always render all 5 pads — vacant seats stay visible so the table reads full.
+  const sceneSeats: SceneSeat[] = [1, 2, 3, 4, 5].map((seat) => {
     const seated = playersBySeat.get(seat);
-    if (!seated && seat !== localSeat) {
-      return [];
-    }
-    const isLocal = seated?.id === localPlayerId || (!seated && seat === localSeat);
-    const player = seated ?? localPlayer;
-    const hand = player?.hands[0];
+    const isLocal = seated?.id === localPlayerId;
+    const hand = seated?.hands[0];
     const acting = Boolean(
-      player && state?.table.phase === "player_action" && state.actingPlayerId === player.id,
+      seated && state?.table.phase === "player_action" && state.actingPlayerId === seated.id,
     );
-    return [
-      {
-        seat,
-        displayName: player?.displayName ?? (isLocal ? "You" : null),
-        avatarUrl: player?.avatarUrl,
-        isLocal,
-        chips: player?.chipStack ?? [],
-        bet: player?.currentBet ?? 0,
-        cards: hand?.cards ?? [],
-        handTotal: handLabel(hand),
-        isActing: acting,
-        turnProgress: acting ? actionProgress : 1,
-        turnSeconds: acting ? actionRemaining : null,
-        actionBurst: player ? (actionBursts[player.id] ?? null) : null,
-        menuOpen: isLocal ? reactions.menuOpen : playerMenu?.playerId === player?.id,
-        hideTag: isLocal && (betting || isMyTurn),
-        onAvatarClick: () => {
-          if (isLocal) {
-            setPlayerMenu(null);
-            reactions.toggleMenu();
-            return;
-          }
-          if (!player) {
-            return;
-          }
-          reactions.setMenuOpen(false);
-          setPlayerMenu({ playerId: player.id, name: player.displayName, seat });
-        },
+    return {
+      seat,
+      displayName: seated?.displayName ?? null,
+      avatarUrl: seated?.avatarUrl,
+      isLocal,
+      chips: seated?.chipStack ?? [],
+      bet: seated?.currentBet ?? 0,
+      cards: hand?.cards ?? [],
+      handTotal: handLabel(hand),
+      isActing: acting,
+      turnProgress: acting ? actionProgress : 1,
+      turnSeconds: acting ? actionRemaining : null,
+      actionBurst: seated ? (actionBursts[seated.id] ?? null) : null,
+      menuOpen: isLocal ? reactions.menuOpen : playerMenu?.playerId === seated?.id,
+      hideTag: isLocal && (betting || isMyTurn),
+      onAvatarClick: () => {
+        if (isLocal) {
+          setPlayerMenu(null);
+          reactions.toggleMenu();
+          return;
+        }
+        if (!seated) return;
+        reactions.setMenuOpen(false);
+        setPlayerMenu({ playerId: seated.id, name: seated.displayName, seat });
       },
-    ];
+    };
   });
 
   // Screen-space anchors (measured through the 3D plane) for menus + throws
-  const anchorSpots = useAnchorSpots(mainRef, sceneSeats.length);
-  const localSpot = anchorSpots[1] ?? { x: 50, y: 80 };
+  const anchorSpots = useAnchorSpots(mainRef, sceneSeats.map((s) => `${s.seat}:${s.displayName}:${s.cards.length}`).join("|"));
+  const localSpot = anchorSpots[localSeat] ?? { x: 50, y: 78 };
   const seatTargets = [
     {
       seat: DEALER_THROW_SEAT,
@@ -349,11 +342,16 @@ export function TableExperience({
       isLocal: false,
       isDealer: true,
     },
-    ...sceneSeats.map((s) => ({
-      seat: s.seat,
-      spot: anchorSpots[s.seat] ?? { x: 50, y: 70 },
-      isLocal: s.isLocal,
-    })),
+    ...sceneSeats
+      .filter((s) => s.isLocal || Boolean(s.displayName))
+      .map((s) => ({
+        seat: s.seat,
+        spot: anchorSpots[s.seat] ?? {
+          x: seatGeometry(s.seat).spot.x,
+          y: 58 + seatGeometry(s.seat).spot.y * 0.28,
+        },
+        isLocal: s.isLocal,
+      })),
   ];
   const menuPlayerSpot = playerMenu ? (anchorSpots[playerMenu.seat] ?? null) : null;
 
@@ -362,26 +360,27 @@ export function TableExperience({
   const anchorRef = useRef(anchorSpots);
   anchorRef.current = anchorSpots;
   useEffect(() => {
+    function spotFor(seat: number) {
+      if (seat === DEALER_THROW_SEAT) {
+        return anchorRef.current[DEALER_THROW_SEAT] ?? { x: 50, y: 22 };
+      }
+      if (anchorRef.current[seat]) return anchorRef.current[seat]!;
+      // Fallback if the seat tag hasn't measured yet — keep throws visible.
+      const geo = seatGeometry(seat);
+      return { x: geo.spot.x, y: 58 + geo.spot.y * 0.28 };
+    }
+
     for (const reaction of roomReactions) {
       if (seenReactions.current.has(reaction.id) || reaction.senderId === localPlayerId) {
         continue;
       }
       seenReactions.current.add(reaction.id);
-      const from = anchorRef.current[reaction.fromSeat];
-      if (!from) {
-        continue;
-      }
+      const from = spotFor(reaction.fromSeat);
       if (reaction.kind === "emote") {
         playSocialPop(1.5);
         reactions.spawnEmote(reaction.emoji, from);
       } else if (reaction.toSeat !== null) {
-        const to =
-          reaction.toSeat === DEALER_THROW_SEAT
-            ? (anchorRef.current[DEALER_THROW_SEAT] ?? { x: 50, y: 22 })
-            : anchorRef.current[reaction.toSeat];
-        if (to) {
-          reactions.spawnThrow(reaction.emoji, from, to);
-        }
+        reactions.spawnThrow(reaction.emoji, from, spotFor(reaction.toSeat));
       }
     }
   }, [roomReactions, localPlayerId, reactions.spawnEmote, reactions.spawnThrow]);

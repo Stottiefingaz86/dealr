@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import type { ChatMessage } from "@live-dealr/realtime";
 
 /** How long a bubble stays on screen before fading out. */
-const LINGER_MS = 5000;
+const LINGER_MS = 10000;
 const MAX_VISIBLE = 5;
 
 /**

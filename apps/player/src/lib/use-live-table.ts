@@ -102,8 +102,8 @@ export function useLiveTable(opts: {
     clearBet: () => sessionRef.current?.clearBet(),
     confirmBet: () => sessionRef.current?.confirmBet(),
     sendAction: (action: PlayerActionType) => sessionRef.current?.sendAction(action),
-    follow: (_next: boolean) => {
-      /* live tables have no follow stream yet */
+    follow: (next: boolean) => {
+      sessionRef.current?.follow(next);
     },
     sendReaction: (kind: ReactionKind, emoji: string, toSeat: number | null = null) => {
       sessionRef.current?.sendReaction(kind, emoji, toSeat);
