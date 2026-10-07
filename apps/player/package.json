@@ -21,7 +21,14 @@
     "react-dom": "^19.1.1",
     "vaul": "^1.1.2",
     "zustand": "^5.0.8",
-    "socket.io-client": "^4.8.1"
+    "socket.io-client": "^4.8.1",
+    "@live-dealr/table-controller": "workspace:*",
+    "@live-dealr/blackjack-engine": "workspace:*",
+    "@live-dealr/dealer-profiles": "workspace:*",
+    "@live-dealr/physical-game-events": "workspace:*",
+    "@live-dealr/rewards": "workspace:*",
+    "@live-dealr/card-reader": "workspace:*",
+    "@live-dealr/websocket": "workspace:*"
   },
   "devDependencies": {
     "@live-dealr/typescript-config": "workspace:*",

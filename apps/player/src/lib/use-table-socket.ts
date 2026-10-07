@@ -18,11 +18,13 @@ import {
   DEFAULT_TABLE_ID,
   type PlayerActionType,
 } from "@live-dealr/shared-types";
-import { API_URL } from "./api";
+import { resolveApiUrl } from "./api";
+import { DemoTable } from "./demo-table";
 import { usePlayerStore } from "./store";
 
 export function useTableSocket() {
   const socketRef = useRef<Socket | null>(null);
+  const demoRef = useRef<DemoTable | null>(null);
   const setConnected = usePlayerStore((s) => s.setConnected);
   const setState = usePlayerStore((s) => s.setState);
   const appendEvent = usePlayerStore((s) => s.appendEvent);
@@ -32,7 +34,30 @@ export function useTableSocket() {
   const pushReaction = usePlayerStore((s) => s.pushReaction);
 
   useEffect(() => {
-    const socket = createRealtimeSocket(API_URL);
+    const apiUrl = resolveApiUrl();
+
+    // Production static host (or missing API) → run the full table in the browser.
+    if (!apiUrl) {
+      const demo = new DemoTable({
+        onState: setState,
+        onEvent: (event) => {
+          if (event.type !== "GAME_STATE_UPDATED") appendEvent(event);
+        },
+        onChat: appendChat,
+        onReaction: pushReaction,
+      });
+      demoRef.current = demo;
+      setConnected(true);
+      setChat([]);
+      demo.start();
+      return () => {
+        demo.stop();
+        demoRef.current = null;
+        setConnected(false);
+      };
+    }
+
+    const socket = createRealtimeSocket(apiUrl);
     socketRef.current = socket;
 
     socket.on("connect", () => {
@@ -67,11 +92,16 @@ export function useTableSocket() {
 
     return () => {
       socket.disconnect();
+      socketRef.current = null;
     };
   }, [appendChat, appendEvent, pushReaction, setChat, setConnected, setEvents, setState]);
 
   return {
     addChip: (value: number) => {
+      if (demoRef.current) {
+        demoRef.current.addChip(value);
+        return;
+      }
       socketRef.current?.emit(ClientEvents.addChip, {
         tableId: DEFAULT_TABLE_ID,
         playerId: DEFAULT_PLAYER_ID,
@@ -79,9 +109,17 @@ export function useTableSocket() {
       });
     },
     clearBet: () => {
+      if (demoRef.current) {
+        demoRef.current.clearBet();
+        return;
+      }
       socketRef.current?.emit(ClientEvents.clearBet, { playerId: DEFAULT_PLAYER_ID });
     },
     sendAction: (action: PlayerActionType) => {
+      if (demoRef.current) {
+        demoRef.current.sendAction(action);
+        return;
+      }
       socketRef.current?.emit(ClientEvents.playerAction, {
         tableId: DEFAULT_TABLE_ID,
         playerId: DEFAULT_PLAYER_ID,
@@ -89,12 +127,17 @@ export function useTableSocket() {
       });
     },
     follow: (next: boolean) => {
+      // Following is client-side store state; the socket call is fire-and-forget on API hosts.
       socketRef.current?.emit(ClientEvents.followDealer, {
         playerId: DEFAULT_PLAYER_ID,
         follow: next,
       });
     },
     sendReaction: (kind: ReactionKind, emoji: string, toSeat: number | null = null) => {
+      if (demoRef.current) {
+        demoRef.current.sendReaction(kind, emoji, toSeat);
+        return;
+      }
       socketRef.current?.emit(ClientEvents.sendReaction, {
         tableId: DEFAULT_TABLE_ID,
         senderId: DEFAULT_PLAYER_ID,
@@ -109,6 +152,10 @@ export function useTableSocket() {
       amount: number;
       unlockLabel?: string;
     }) => {
+      if (demoRef.current) {
+        demoRef.current.claimReward(payload);
+        return;
+      }
       socketRef.current?.emit(ClientEvents.claimReward, {
         tableId: DEFAULT_TABLE_ID,
         playerId: DEFAULT_PLAYER_ID,
@@ -116,6 +163,10 @@ export function useTableSocket() {
       });
     },
     tip: (amount: number) => {
+      if (demoRef.current) {
+        demoRef.current.tip(amount);
+        return;
+      }
       socketRef.current?.emit(ClientEvents.tipDealer, {
         tableId: DEFAULT_TABLE_ID,
         playerId: DEFAULT_PLAYER_ID,
@@ -127,7 +178,6 @@ export function useTableSocket() {
       if (!trimmed) {
         return;
       }
-      // Optimistic local echo so the panel updates even if the socket is slow.
       appendChat({
         id: `local-${Date.now()}`,
         tableId: DEFAULT_TABLE_ID,

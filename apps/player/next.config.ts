@@ -12,6 +12,13 @@ const nextConfig: NextConfig = {
     "@live-dealr/shared-types",
     "@live-dealr/realtime",
     "@live-dealr/environments",
+    "@live-dealr/table-controller",
+    "@live-dealr/blackjack-engine",
+    "@live-dealr/dealer-profiles",
+    "@live-dealr/physical-game-events",
+    "@live-dealr/rewards",
+    "@live-dealr/card-reader",
+    "@live-dealr/websocket",
   ],
 };
 

@@ -871,13 +871,14 @@ export class TableRuntime {
       this.sequence += 1;
       this.state.sequence = this.sequence;
     }
+    // Cast: TS can't correlate `type` + `payload` through createGameEvent's generic.
     const event = createGameEvent({
       tableId: this.state.table.id,
       roundId: this.state.round?.id ?? null,
       sequence: this.sequence,
       type,
       payload,
-    });
+    } as unknown as Parameters<typeof createGameEvent<T>>[0]);
     if (!isStateSync) {
       this.store.append(event);
       rewardSignalFromEvent(event);

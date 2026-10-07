@@ -128,18 +128,39 @@ importers:
 
   apps/player:
     dependencies:
+      '@live-dealr/blackjack-engine':
+        specifier: workspace:*
+        version: link:../../packages/blackjack-engine
+      '@live-dealr/card-reader':
+        specifier: workspace:*
+        version: link:../../services/card-reader
+      '@live-dealr/dealer-profiles':
+        specifier: workspace:*
+        version: link:../../packages/dealer-profiles
       '@live-dealr/environments':
         specifier: workspace:*
         version: link:../../packages/environments
+      '@live-dealr/physical-game-events':
+        specifier: workspace:*
+        version: link:../../packages/physical-game-events
       '@live-dealr/realtime':
         specifier: workspace:*
         version: link:../../packages/realtime
+      '@live-dealr/rewards':
+        specifier: workspace:*
+        version: link:../../packages/rewards
       '@live-dealr/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
+      '@live-dealr/table-controller':
+        specifier: workspace:*
+        version: link:../../services/table-controller
       '@live-dealr/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@live-dealr/websocket':
+        specifier: workspace:*
+        version: link:../../services/websocket
       canvas-confetti:
         specifier: ^1.9.4
         version: 1.9.4

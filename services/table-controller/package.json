@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./runtime": "./src/table-runtime.ts",
+    "./event-store": "./src/event-store.ts"
   },
   "dependencies": {
     "@live-dealr/blackjack-engine": "workspace:*",
