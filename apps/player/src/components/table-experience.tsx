@@ -737,7 +737,7 @@ function SeatDock({
   children: React.ReactNode;
 }) {
   // Keep clear of Missions / chat ghosts and the home indicator.
-  const bottomSafe = "max(4.25rem, calc(env(safe-area-inset-bottom) + 3.25rem))";
+  const bottomSafe = "max(4.5rem, calc(env(safe-area-inset-bottom) + 3.5rem))";
   const seatStyle =
     spot != null
       ? {
@@ -753,6 +753,8 @@ function SeatDock({
     transform: "translateX(-50%)",
   };
 
+  // Pill stays on the true centre line; side buttons wing out so they don't
+  // shove the tray off-centre (which made the bet pad look sandwiched).
   return (
     <motion.div
       className="pointer-events-none absolute z-40 flex flex-col items-center gap-1.5"
@@ -762,15 +764,18 @@ function SeatDock({
       exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.16 } }}
       transition={{ type: "spring", stiffness: 460, damping: 30 }}
     >
-      <div className="pointer-events-auto flex items-center gap-2">
-        {leading}
+      <div className="pointer-events-auto relative flex items-center justify-center">
+        {leading ? (
+          <div className="absolute right-[calc(100%+0.5rem)] top-1/2 flex -translate-y-1/2 items-center gap-2">
+            {leading}
+          </div>
+        ) : null}
         <div
           className={`relative flex items-center rounded-full border bg-[#0d0d13] px-2.5 py-1.5 shadow-[0_14px_36px_rgba(0,0,0,0.6)] sm:px-3 sm:py-2 ${
             urgent ? "border-[#e04545]/70" : "border-white/15"
           }`}
         >
           {children}
-          {/* Countdown badge — same language as the turn timer on avatars */}
           {seconds !== null ? (
             <span
               className={`absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full text-[10px] font-bold tabular-nums text-black shadow ${
@@ -781,7 +786,11 @@ function SeatDock({
             </span>
           ) : null}
         </div>
-        {trailing}
+        {trailing ? (
+          <div className="absolute left-[calc(100%+0.5rem)] top-1/2 flex -translate-y-1/2 items-center gap-2">
+            {trailing}
+          </div>
+        ) : null}
       </div>
       {caption ? (
         <p className="whitespace-nowrap text-[10px] tabular-nums text-white/60 drop-shadow">

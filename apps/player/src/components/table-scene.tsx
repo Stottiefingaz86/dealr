@@ -49,20 +49,20 @@ const PLANE_V_COMPACT = { left: 0.02, width: 0.96, top: 0.72, height: 0.94 };
  * Seat 1 = local (centre). Desktop arc uses the full slab; phone arc is tighter
  * so every hand stays on-screen (no off-table crop).
  */
-/** Local seat sits a bit higher so the pad clears the bottom chip tray. */
+/** Local seat higher on the slab so the bet pad sits above the bottom chip tray. */
 const SEAT_POS: ReadonlyArray<readonly [number, number]> = [
-  [50, 40],
-  [30, 38],
-  [70, 38],
-  [14, 34],
-  [86, 34],
+  [50, 34],
+  [30, 32],
+  [70, 32],
+  [14, 28],
+  [86, 28],
 ];
 const SEAT_POS_COMPACT: ReadonlyArray<readonly [number, number]> = [
-  [50, 44],
-  [32, 42],
-  [68, 42],
-  [18, 38],
-  [82, 38],
+  [50, 38],
+  [32, 36],
+  [68, 36],
+  [18, 32],
+  [82, 32],
 ];
 const DEALER = { x: 50, y: 12 };
 /** How long the bet pad takes to open, swallow the chips and close. */
