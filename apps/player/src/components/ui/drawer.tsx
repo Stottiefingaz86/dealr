@@ -22,8 +22,8 @@ export function Drawer({
   );
 }
 
-export const DrawerPortal = DrawerPrimitive.Portal;
-export const DrawerClose = DrawerPrimitive.Close;
+export const DrawerPortal: typeof DrawerPrimitive.Portal = DrawerPrimitive.Portal;
+export const DrawerClose: typeof DrawerPrimitive.Close = DrawerPrimitive.Close;
 
 export function DrawerOverlay({
   className,

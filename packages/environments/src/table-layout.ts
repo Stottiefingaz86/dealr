@@ -40,7 +40,7 @@ export function clampSpot(spot: TableSpot): TableSpot {
 }
 
 export function getSeat(layout: TableLayout, seat: 1 | 2 | 3 | 4 | 5): TableSpot {
-  return layout.seats[seat - 1];
+  return layout.seats[seat - 1] ?? DEFAULT_TABLE_LAYOUT.seats[seat - 1]!;
 }
 
 export function setLayoutSpot(
@@ -56,7 +56,8 @@ export function setLayoutSpot(
   }
   const index = Number(id.split("-")[1]) - 1;
   const seats = [...layout.seats] as TableLayout["seats"];
-  seats[index] = clampSpot({ ...seats[index], ...spot });
+  const current = seats[index] ?? DEFAULT_TABLE_LAYOUT.seats[index]!;
+  seats[index] = clampSpot({ ...current, ...spot });
   return { ...layout, seats };
 }
 

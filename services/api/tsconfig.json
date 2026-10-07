@@ -1,19 +1,23 @@
 {
+  "extends": "@live-dealr/typescript-config/nestjs.json",
   "compilerOptions": {
-    "strict": true,
-    "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
-    "esModuleInterop": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "noEmit": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "paths": {
+      "@live-dealr/shared-types": ["../../packages/shared-types/src/index.ts"],
+      "@live-dealr/shared-types/*": ["../../packages/shared-types/src/*"],
+      "@live-dealr/realtime": ["../../packages/realtime/src/index.ts"],
+      "@live-dealr/environments": ["../../packages/environments/src/index.ts"],
+      "@live-dealr/blackjack-engine": ["../../packages/blackjack-engine/src/index.ts"],
+      "@live-dealr/physical-game-events": ["../../packages/physical-game-events/src/index.ts"],
+      "@live-dealr/dealer-profiles": ["../../packages/dealer-profiles/src/index.ts"],
+      "@live-dealr/card-reader": ["../card-reader/src/index.ts"],
+      "@live-dealr/table-controller": ["../table-controller/src/index.ts"],
+      "@live-dealr/websocket": ["../websocket/src/index.ts"],
+      "@live-dealr/media": ["../media/src/index.ts"]
+    }
   },
-  "include": [
-    "src",
-    "../websocket/src",
-    "../card-reader/src",
-    "../table-controller/src"
-  ]
+  "include": ["src/**/*.ts"]
 }

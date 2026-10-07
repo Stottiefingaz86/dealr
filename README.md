@@ -27,3 +27,14 @@ pnpm dev
 8. Read the event inspector.
 
 PostgreSQL is optional for this loop. `docker compose up -d` then `pnpm db:generate` when you persist events.
+
+## Deploy (Vercel)
+
+Deploy the player app only — Nest API / websocket stay on a separate host.
+
+1. Import `Stottiefingaz86/dealr` in Vercel.
+2. Set **Root Directory** to `apps/player`.
+3. Framework: Next.js. Install / build commands can stay as the defaults from `apps/player/vercel.json` (they install and build from the monorepo root via pnpm + turbo).
+4. Point `NEXT_PUBLIC_*` env vars at your API / stream URLs when you have them.
+
+Root `pnpm build` builds `@live-dealr/player` only. Use `pnpm build:all` for the full turbo graph.
