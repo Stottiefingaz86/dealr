@@ -10,7 +10,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { Lock } from "lucide-react";
+import { Lock, X } from "lucide-react";
 import type { TableSpot } from "@live-dealr/environments";
 
 export const EMOTES = [
@@ -236,21 +236,32 @@ export function AvatarReactionMenu({
         />
       ) : null}
 
-      {open && !drag ? (
+      {open ? (
         <motion.div
-          className="fixed z-[71] w-[11.5rem] -translate-x-1/2 rounded-2xl border border-white/12 bg-[#121218]/95 p-2.5 shadow-[0_20px_50px_rgba(0,0,0,0.55)] backdrop-blur-xl"
+          className={`fixed z-[71] w-[11.5rem] -translate-x-1/2 rounded-2xl border border-white/12 bg-[#121218]/95 p-2.5 shadow-[0_20px_50px_rgba(0,0,0,0.55)] backdrop-blur-xl ${drag ? "pointer-events-none opacity-40" : ""}`}
           style={{
             left: `${localSpot.x}%`,
             top: `${Math.max(8, localSpot.y - 22)}%`,
           }}
           initial={{ opacity: 0, y: 8, scale: 0.96 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
+          animate={{ opacity: drag ? 0.4 : 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 6, scale: 0.96 }}
           onClick={(e) => e.stopPropagation()}
         >
-          <p className="mb-1.5 px-0.5 text-[9px] tracking-[0.18em] text-white/40 uppercase">
-            React
-          </p>
+          <div className="mb-1.5 flex items-center justify-between gap-1 px-0.5">
+            <p className="text-[9px] tracking-[0.18em] text-white/40 uppercase">React</p>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose();
+              }}
+              aria-label="Close"
+              className="flex size-6 items-center justify-center rounded-full text-white/50 hover:bg-white/10 hover:text-white"
+            >
+              <X className="size-3.5" strokeWidth={2} />
+            </button>
+          </div>
           <div className="mb-2.5 grid grid-cols-6 gap-1">
             {EMOTES.map((item) =>
               isLocked(item) ? (
