@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Lock } from "lucide-react";
 import { ANIMATION_INTENSITY } from "@live-dealr/environments";
 import type {
   Card,
@@ -233,6 +232,7 @@ function OffscreenSeats({
 }) {
   const vw = typeof window !== "undefined" ? window.innerWidth : 0;
   const out = seats.filter((seat) => {
+    if (!seat.displayName && !seat.isLocal) return false;
     const geo = seatGeometry(seat.seat);
     const x = plane.left + (plane.width * geo.spot.x) / 100;
     return x < 24 || x > vw - 24;
@@ -248,12 +248,14 @@ function OffscreenSeats({
       }`}
     >
       <PlayerAvatar
-        name={seat.displayName ?? "?"}
+        name={seat.displayName ?? (seat.isLocal ? "You" : "?")}
         src={seat.avatarUrl}
         isActing={seat.isActing}
         size={20}
       />
-      <span className="text-[10px] font-medium text-white/85">{seat.displayName}</span>
+      <span className="text-[10px] font-medium text-white/85">
+        {seat.displayName ?? (seat.isLocal ? "You" : "")}
+      </span>
       {seat.handTotal ? (
         <span className="rounded-full bg-[#1f8f4e] px-1.5 text-[10px] font-bold tabular-nums text-white">
           {seat.handTotal}
@@ -764,6 +766,16 @@ function Seat({
   const name = model.displayName ?? (model.isLocal ? "You" : "");
   const hasBet = model.chips.length > 0;
 
+  // Empty seats stay invisible — no lock disks, Open pills, or "?" placeholders.
+  // Keep a zero-size anchor so throws can still target the seat slot.
+  if (vacant) {
+    return (
+      <Standee x={geo.tag.x} y={geo.tag.y} scale={sc}>
+        <div data-seat-drop={model.seat} data-seat-anchor={model.seat} className="size-1 opacity-0" />
+      </Standee>
+    );
+  }
+
   return (
     <>
       {/* Seat zone — soft pool of light grouping avatar, cards and name */}
@@ -775,28 +787,15 @@ function Seat({
               ? "radial-gradient(ellipse at 50% 50%, rgba(240,196,58,0.3), rgba(240,196,58,0.08) 55%, transparent 72%)"
               : model.isLocal
                 ? `radial-gradient(ellipse at 50% 50%, hsla(${hue}, 80%, 65%, 0.26), hsla(${hue}, 80%, 65%, 0.06) 55%, transparent 72%)`
-                : vacant
-                  ? "radial-gradient(ellipse at 50% 50%, rgba(255,255,255,0.05), transparent 68%)"
-                  : `radial-gradient(ellipse at 50% 50%, hsla(${hue}, 70%, 65%, 0.16), hsla(${hue}, 70%, 65%, 0.03) 55%, transparent 72%)`,
+                : `radial-gradient(ellipse at 50% 50%, hsla(${hue}, 70%, 65%, 0.16), hsla(${hue}, 70%, 65%, 0.03) 55%, transparent 72%)`,
           }}
           transition={{ duration: 0.6 }}
         />
       </FlatGroup>
 
-      {/* Vacant seats: whisper of a ring outside betting; locked pad only while bets are open */}
-      {vacant && !betting ? (
-        <FlatGroup x={geo.spot.x} y={geo.spot.y} scale={sc}>
-          <div
-            className="size-[52px] rounded-full"
-            style={{ boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.08)" }}
-            aria-hidden
-          />
-        </FlatGroup>
-      ) : null}
-
       {/* AR bet pad — materialises for betting, opens + swallows chips when the round starts */}
       <AnimatePresence>
-        {betting && !vacant ? (
+        {betting ? (
           <FlatGroup
             key="pad"
             x={geo.spot.x}
@@ -899,26 +898,6 @@ function Seat({
             </motion.button>
           </FlatGroup>
         ) : null}
-
-        {/* Locked vacant spots while betting — small badge, not a fake bet pad */}
-        {betting && vacant ? (
-          <FlatGroup key="locked" x={geo.spot.x} y={geo.spot.y} scale={sc}>
-            <motion.div
-              className="flex size-[44px] items-center justify-center rounded-full"
-              style={{
-                background: "rgba(10,10,14,0.55)",
-                boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.1), 0 4px 14px rgba(0,0,0,0.4)",
-              }}
-              initial={{ scale: 0.5, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.6, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 280, damping: 24 }}
-              aria-label="Seat locked"
-            >
-              <Lock className="size-3.5 text-white/30" strokeWidth={2} aria-hidden />
-            </motion.div>
-          </FlatGroup>
-        ) : null}
       </AnimatePresence>
 
       {/* Chips stack on the spot; fall through when the pad opens */}
@@ -954,87 +933,80 @@ function Seat({
         <CardFan cards={model.cards} size="md" total={model.handTotal} />
       </FlatGroup>
 
-      {/* Identity tag — seated players only. Vacant seats stay quiet (no Open / ? pills). */}
-      {!vacant ? (
-        <Standee x={geo.tag.x} y={geo.tag.y} scale={sc} className="pointer-events-auto">
-          <div
-            className="relative flex flex-col items-center"
-            data-seat-drop={model.seat}
-            data-seat-anchor={model.seat}
-            style={{ transformStyle: "flat", visibility: model.hideTag ? "hidden" : "visible" }}
+      {/* Identity tag — avatar + name + wager */}
+      <Standee x={geo.tag.x} y={geo.tag.y} scale={sc} className="pointer-events-auto">
+        <div
+          className="relative flex flex-col items-center"
+          data-seat-drop={model.seat}
+          data-seat-anchor={model.seat}
+          style={{ transformStyle: "flat", visibility: model.hideTag ? "hidden" : "visible" }}
+        >
+          <div className="pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2">
+            <SeatActionBurst
+              action={model.actionBurst?.action ?? null}
+              burstId={model.actionBurst?.id ?? null}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              model.onAvatarClick();
+            }}
+            aria-label={model.isLocal ? "Your reactions" : `${name} profile`}
+            className={`relative flex items-center gap-1.5 whitespace-nowrap rounded-full border py-[3px] pl-[3px] pr-2.5 shadow-[0_8px_20px_rgba(0,0,0,0.6)] ${
+              model.isActing
+                ? "border-[#f0c43a]/80 bg-[#1c170a]"
+                : model.menuOpen
+                  ? "border-[#f0c43a]/80 bg-[#0d0d13]"
+                  : model.isLocal
+                    ? "border-[#f0c43a]/45 bg-[#0d0d13]"
+                    : "border-white/15 bg-[#0d0d13]"
+            }`}
           >
-            <div className="pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2">
-              <SeatActionBurst
-                action={model.actionBurst?.action ?? null}
-                burstId={model.actionBurst?.id ?? null}
-              />
-            </div>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                model.onAvatarClick();
-              }}
-              aria-label={model.isLocal ? "Your reactions" : `${name} profile`}
-              className={`relative flex items-center gap-1.5 whitespace-nowrap rounded-full border py-[3px] pl-[3px] pr-2.5 shadow-[0_8px_20px_rgba(0,0,0,0.6)] ${
-                model.isActing
-                  ? "border-[#f0c43a]/80 bg-[#1c170a]"
-                  : model.menuOpen
-                    ? "border-[#f0c43a]/80 bg-[#0d0d13]"
-                    : model.isLocal
-                      ? "border-[#f0c43a]/45 bg-[#0d0d13]"
-                      : "border-white/15 bg-[#0d0d13]"
-              }`}
-            >
-              <span className="relative flex size-[30px] items-center justify-center">
-                <AnimatePresence>
-                  {model.isActing ? (
-                    <TurnOrb
-                      progress={model.turnProgress}
-                      seconds={model.turnSeconds}
-                      avatarSize={28}
-                    />
-                  ) : null}
-                </AnimatePresence>
-                <PlayerAvatar
-                  name={name || "?"}
-                  src={model.avatarUrl}
-                  isLocal={model.isLocal}
-                  isActing={model.isActing}
-                  size={28}
-                />
-              </span>
-              <span
-                className={`max-w-[5.5rem] truncate text-[11px] leading-none ${
-                  model.isLocal || model.isActing
-                    ? "font-semibold text-[#f0c43a]"
-                    : "font-medium text-white/90"
-                }`}
-              >
-                {name}
-              </span>
+            <span className="relative flex size-[30px] items-center justify-center">
               <AnimatePresence>
-                {model.bet > 0 ? (
-                  <motion.span
-                    key="bet"
-                    className="text-[11px] font-semibold tabular-nums leading-none text-white"
-                    initial={{ opacity: 0, x: -4 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0 }}
-                  >
-                    ${model.bet}
-                  </motion.span>
+                {model.isActing ? (
+                  <TurnOrb
+                    progress={model.turnProgress}
+                    seconds={model.turnSeconds}
+                    avatarSize={28}
+                  />
                 ) : null}
               </AnimatePresence>
-            </button>
-          </div>
-        </Standee>
-      ) : (
-        /* Anchor only — throws/menus still resolve seat geometry for empty pads */
-        <Standee x={geo.tag.x} y={geo.tag.y} scale={sc}>
-          <div data-seat-drop={model.seat} data-seat-anchor={model.seat} className="size-1 opacity-0" />
-        </Standee>
-      )}
+              <PlayerAvatar
+                name={name || "?"}
+                src={model.avatarUrl}
+                isLocal={model.isLocal}
+                isActing={model.isActing}
+                size={28}
+              />
+            </span>
+            <span
+              className={`max-w-[5.5rem] truncate text-[11px] leading-none ${
+                model.isLocal || model.isActing
+                  ? "font-semibold text-[#f0c43a]"
+                  : "font-medium text-white/90"
+              }`}
+            >
+              {name}
+            </span>
+            <AnimatePresence>
+              {model.bet > 0 ? (
+                <motion.span
+                  key="bet"
+                  className="text-[11px] font-semibold tabular-nums leading-none text-white"
+                  initial={{ opacity: 0, x: -4 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0 }}
+                >
+                  ${model.bet}
+                </motion.span>
+              ) : null}
+            </AnimatePresence>
+          </button>
+        </div>
+      </Standee>
     </>
   );
 }
