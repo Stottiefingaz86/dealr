@@ -41,6 +41,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { setSfxLevels } from "@/lib/sfx-levels";
 import { playSocialPop } from "@/lib/chip-sound";
 import { playCountdownTick, playTurnChime } from "@/lib/turn-sound";
+import { ensureAmbience } from "@/lib/music";
 import { playChipPlace, unlockAudio } from "@/lib/chip-sound";
 import { playCardDeal } from "@/lib/card-sound";
 
@@ -78,6 +79,11 @@ export function TableExperience() {
   useEffect(() => {
     setSfxLevels({ table: settings.tableVolume, social: settings.socialVolume });
   }, [settings.tableVolume, settings.socialVolume]);
+
+  // Lounge track on by default — browsers need a gesture, so we arm immediately and retry on first tap.
+  useEffect(() => {
+    ensureAmbience();
+  }, []);
   const [actionBursts, setActionBursts] = useState<Record<string, ActionBurst>>({});
   const [friends, setFriends] = useState<Set<string>>(() => new Set());
   const [playerMenu, setPlayerMenu] = useState<{

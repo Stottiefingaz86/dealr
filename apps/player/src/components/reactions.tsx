@@ -8,6 +8,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Lock } from "lucide-react";
 import type { TableSpot } from "@live-dealr/environments";
@@ -130,6 +131,15 @@ export function AvatarReactionMenu({
     }
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   const finishDrag = useCallback(
     (clientX: number, clientY: number) => {
       const emoji = dragEmoji.current;
@@ -157,6 +167,8 @@ export function AvatarReactionMenu({
         }
       }
       if (!target || best > 110) {
+        // Missed drop — dismiss so the popover never feels stuck.
+        onClose();
         return;
       }
       onThrow(emoji, target.spot, target.seat);
@@ -196,81 +208,85 @@ export function AvatarReactionMenu({
     return null;
   }
 
-  return (
+  // Portal to body so overflow-clip / 3D transforms on <main> can't trap the
+  // fixed backdrop (that bug only showed up on some prod mobile browsers).
+  return createPortal(
     <>
+      {open ? (
+        <button
+          type="button"
+          className={`fixed inset-0 z-[70] cursor-default bg-black/25 ${drag ? "pointer-events-none" : ""}`}
+          aria-label="Close reactions"
+          onClick={onClose}
+        />
+      ) : null}
+
       {open && !drag ? (
-        <>
-          <button
-            type="button"
-            className="fixed inset-0 z-[45] cursor-default bg-black/20"
-            aria-label="Close reactions"
-            onClick={onClose}
-          />
-          <motion.div
-            className="absolute z-[46] w-[11.5rem] -translate-x-1/2 rounded-2xl border border-white/12 bg-[#121218]/95 p-2.5 shadow-[0_20px_50px_rgba(0,0,0,0.55)] backdrop-blur-xl"
-            style={{
-              left: `${localSpot.x}%`,
-              top: `${Math.max(8, localSpot.y - 22)}%`,
-            }}
-            initial={{ opacity: 0, y: 8, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 6, scale: 0.96 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <p className="mb-1.5 px-0.5 text-[9px] tracking-[0.18em] text-white/40 uppercase">
-              React
-            </p>
-            <div className="mb-2.5 grid grid-cols-6 gap-1">
-              {EMOTES.map((item) =>
-                isLocked(item) ? (
-                  <LockedTile key={item.id} emoji={item.emoji} onClick={onLocked} />
-                ) : (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className="flex size-8 items-center justify-center rounded-lg text-base hover:bg-white/10 active:scale-95"
-                    onClick={() => {
-                      onEmote(item.emoji);
-                      onClose();
-                    }}
-                  >
-                    {item.emoji}
-                  </button>
-                ),
-              )}
-            </div>
-            <p className="mb-1.5 px-0.5 text-[9px] tracking-[0.18em] text-white/40 uppercase">
-              Throw · drag to player
-            </p>
-            <div className="grid grid-cols-6 gap-1">
-              {THROWABLES.map((item) =>
-                isLocked(item) ? (
-                  <LockedTile key={item.id} emoji={item.emoji} onClick={onLocked} />
-                ) : (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className="flex size-8 touch-none items-center justify-center rounded-lg text-base hover:bg-white/10 active:scale-95"
-                    onPointerDown={(e) => startThrowDrag(item.emoji, e)}
-                  >
-                    {item.emoji}
-                  </button>
-                ),
-              )}
-            </div>
-          </motion.div>
-        </>
+        <motion.div
+          className="fixed z-[71] w-[11.5rem] -translate-x-1/2 rounded-2xl border border-white/12 bg-[#121218]/95 p-2.5 shadow-[0_20px_50px_rgba(0,0,0,0.55)] backdrop-blur-xl"
+          style={{
+            left: `${localSpot.x}%`,
+            top: `${Math.max(8, localSpot.y - 22)}%`,
+          }}
+          initial={{ opacity: 0, y: 8, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 6, scale: 0.96 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <p className="mb-1.5 px-0.5 text-[9px] tracking-[0.18em] text-white/40 uppercase">
+            React
+          </p>
+          <div className="mb-2.5 grid grid-cols-6 gap-1">
+            {EMOTES.map((item) =>
+              isLocked(item) ? (
+                <LockedTile key={item.id} emoji={item.emoji} onClick={onLocked} />
+              ) : (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="flex size-8 items-center justify-center rounded-lg text-base hover:bg-white/10 active:scale-95"
+                  onClick={() => {
+                    onEmote(item.emoji);
+                    onClose();
+                  }}
+                >
+                  {item.emoji}
+                </button>
+              ),
+            )}
+          </div>
+          <p className="mb-1.5 px-0.5 text-[9px] tracking-[0.18em] text-white/40 uppercase">
+            Throw · drag to player
+          </p>
+          <div className="grid grid-cols-6 gap-1">
+            {THROWABLES.map((item) =>
+              isLocked(item) ? (
+                <LockedTile key={item.id} emoji={item.emoji} onClick={onLocked} />
+              ) : (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="flex size-8 touch-none items-center justify-center rounded-lg text-base hover:bg-white/10 active:scale-95"
+                  onPointerDown={(e) => startThrowDrag(item.emoji, e)}
+                >
+                  {item.emoji}
+                </button>
+              ),
+            )}
+          </div>
+        </motion.div>
       ) : null}
 
       {drag ? (
         <div
-          className="pointer-events-none fixed z-[60] text-3xl drop-shadow-lg"
+          className="pointer-events-none fixed z-[72] text-3xl drop-shadow-lg"
           style={{ left: drag.x, top: drag.y, transform: "translate(-50%, -50%)" }}
         >
           {drag.emoji}
         </div>
       ) : null}
-    </>
+    </>,
+    document.body,
   );
 }
 
