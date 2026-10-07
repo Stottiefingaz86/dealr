@@ -32,9 +32,12 @@ PostgreSQL is optional for this loop. `docker compose up -d` then `pnpm db:gener
 
 Deploy the player app only — Nest API / websocket stay on a separate host.
 
+The player is a static Next export (`apps/player/out`). Root `vercel.json` builds
+`@live-dealr/player` and publishes that folder, so the project Root Directory can
+stay at the repo root (the root `package.json` has no `next`).
+
 1. Import `Stottiefingaz86/dealr` in Vercel.
-2. Set **Root Directory** to `apps/player`.
-3. Framework: Next.js. Install / build commands can stay as the defaults from `apps/player/vercel.json` (they install and build from the monorepo root via pnpm + turbo).
-4. Point `NEXT_PUBLIC_*` env vars at your API / stream URLs when you have them.
+2. Leave Root Directory as `.` (or set it to `apps/player` — both work).
+3. Point `NEXT_PUBLIC_*` env vars at your API / stream URLs when you have them.
 
 Root `pnpm build` builds `@live-dealr/player` only. Use `pnpm build:all` for the full turbo graph.

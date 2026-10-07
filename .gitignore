@@ -11,3 +11,4 @@ coverage
 database/generated
 apps/*/.next
 **/*.tsbuildinfo
+apps/*/out
