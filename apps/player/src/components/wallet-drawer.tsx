@@ -6,7 +6,7 @@ import { DEFAULT_PLAYER_ID } from "@live-dealr/shared-types";
 import { cn } from "@live-dealr/ui/lib/utils";
 import { Drawer, DrawerContent, DrawerHandle } from "@/components/ui/drawer";
 import { useDrawerDirection } from "@/hooks/use-mobile";
-import { API_URL } from "@/lib/api";
+import { resolveApiUrl } from "@/lib/api";
 import { formatMoney } from "@/lib/chips";
 
 const AMOUNTS = [25, 50, 100, 250, 500, 1000];
@@ -30,8 +30,13 @@ export function WalletDrawer({
     setBusy(true);
     setMessage(null);
     try {
+      const api = resolveApiUrl();
+      if (!api) {
+        setMessage("Wallet API isn’t available on this table.");
+        return;
+      }
       const path = action === "deposit" ? "/wallet/deposit" : "/wallet/withdraw";
-      const response = await fetch(`${API_URL}${path}`, {
+      const response = await fetch(`${api}${path}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ playerId: DEFAULT_PLAYER_ID, amount }),

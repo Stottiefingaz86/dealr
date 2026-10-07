@@ -38,7 +38,10 @@ export function useLiveTable(opts: {
     setStatus(opts.role === "host" ? "Opening table…" : "Connecting…");
 
     const sinks = {
-      onState: setState,
+      onState: (state: Parameters<typeof setState>[0]) => {
+        if (cancelled) return;
+        setState(state);
+      },
       onChat: appendChat,
       onReaction: pushReaction,
       onStatus: (s: string) => {
@@ -65,6 +68,14 @@ export function useLiveTable(opts: {
         if (cancelled) return;
         setPlayerId(session.localPlayerId);
         setConnected(true);
+        // Guests must have table state before we show the felt — otherwise they
+        // get the chrome with an empty table (no pads / chips / cards).
+        const hasState = Boolean(usePlayerStore.getState().state?.players?.length);
+        if (opts.role === "guest" && !hasState) {
+          setError("Joined but got no table state — refresh and try again");
+          setConnected(false);
+          return;
+        }
         setReady(true);
       })
       .catch((e: unknown) => {

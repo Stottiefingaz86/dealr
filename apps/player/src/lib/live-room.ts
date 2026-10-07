@@ -549,40 +549,45 @@ export class LiveGuest {
       peer.on("open", () => {
         const hostId = peerIdForRoom(this.roomCode);
         this.sinks.onStatus(round > 1 ? `Retrying join (${round}/${JOIN_ATTEMPTS})…` : "Connecting…");
-        const conn = peer.connect(hostId, { reliable: true, serialization: "json" });
-        this.conn = conn;
-        const timer = window.setTimeout(() => {
-          if (settled) return;
-          try {
-            conn.close();
-          } catch {
-            /* ignore */
-          }
-          fail("Table didn’t answer — ask the host to keep the page open");
-        }, JOIN_TIMEOUT_MS);
-        conn.on("open", () => {
-          window.clearTimeout(timer);
-          send(conn, {
-            t: "hello",
-            name: this.name,
-            playerId: this.playerId,
-            avatarUrl: wireAvatar(this.avatarUrl),
+          // Default binary packing — json serialization was dropping/breaking welcome state for guests.
+          const conn = peer.connect(hostId, { reliable: true });
+          this.conn = conn;
+          const timer = window.setTimeout(() => {
+            if (settled) return;
+            try {
+              conn.close();
+            } catch {
+              /* ignore */
+            }
+            fail("Table didn’t answer — ask the host to keep the page open");
+          }, JOIN_TIMEOUT_MS);
+          conn.on("open", () => {
+            send(conn, {
+              t: "hello",
+              name: this.name,
+              playerId: this.playerId,
+              avatarUrl: wireAvatar(this.avatarUrl),
+            });
           });
-        });
-        conn.on("data", (raw) => {
-          const msg = raw as LiveWire;
-          this.onHostMessage(msg);
-          if (msg.t === "welcome" && !settled) {
-            window.clearTimeout(timer);
-            settled = true;
-            this.sinks.onStatus("Joined table");
-            resolve();
-          }
-          if (msg.t === "reject" && !settled) {
-            window.clearTimeout(timer);
-            fail(msg.message || "Table full");
-          }
-        });
+          conn.on("data", (raw) => {
+            const msg = raw as LiveWire;
+            if (!msg || typeof msg !== "object" || !("t" in msg)) return;
+            this.onHostMessage(msg);
+            if (msg.t === "welcome" && !settled) {
+              window.clearTimeout(timer);
+              if (!msg.state?.players?.length) {
+                fail("Host sent an empty table — ask them to refresh");
+                return;
+              }
+              settled = true;
+              this.sinks.onStatus("Joined table");
+              resolve();
+            }
+            if (msg.t === "reject" && !settled) {
+              window.clearTimeout(timer);
+              fail(msg.message || "Table full");
+            }
+          });
         conn.on("close", () => {
           if (!settled) fail("Connection closed before join finished");
           else this.sinks.onError("Host left the table");

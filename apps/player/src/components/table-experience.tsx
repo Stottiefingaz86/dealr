@@ -64,8 +64,8 @@ import { speakHandTotal, speakRewardCongrats, speakTipThanks } from "@/lib/deale
 
 type ActionBurst = { action: PlayerActionType; id: string };
 
-/** Push the seat dock below the tag anchor so it clears the bet pad. */
-const DOCK_DROP_PX = 26;
+/** Extra drop below the seat tag for the action dock (hit/stand). */
+const ACTION_DOCK_DROP_PX = 56;
 
 export type TableExperienceProps = {
   /** Override for live/friends tables where your id isn't the demo DEFAULT_PLAYER_ID. */
@@ -199,10 +199,10 @@ export function TableExperience({
     return map;
   }, [state?.players]);
 
+  // Match by id only. Guests must not fall back to seat 1 (host). Solo demo uses DEFAULT_PLAYER_ID.
   const localPlayer =
     state?.players.find((player) => player.id === localPlayerId) ??
-    playersBySeat.get(1) ??
-    state?.players[0];
+    (!playerIdProp ? state?.players.find((player) => player.id === DEFAULT_PLAYER_ID) : undefined);
   const playerHand = localPlayer?.hands[0];
   const dealerHand = state?.dealer.hand;
 
@@ -536,12 +536,12 @@ export function TableExperience({
         </header>
       </div>
 
-      {/* Seat dock — your "You" tag becomes the controls: chips while betting, moves on your turn. */}
+      {/* Chips sit on a bottom tray so they never cover the bet pad. Actions hang under your seat. */}
       <AnimatePresence mode="wait">
         {betting ? (
           <SeatDock
             key="bets-dock"
-            spot={localSpot}
+            placement="bottom"
             seconds={bettingRemaining}
             leading={
               <DockButton label="Undo bet" onClick={clearBet} disabled={totalBet === 0}>
@@ -603,6 +603,7 @@ export function TableExperience({
           <SeatDock
             key="action-dock"
             spot={localSpot}
+            dropPx={ACTION_DOCK_DROP_PX}
             seconds={actionRemaining}
             urgent={actionProgress < 0.3}
           >
@@ -715,6 +716,8 @@ export function TableExperience({
 
 function SeatDock({
   spot,
+  placement = "seat",
+  dropPx = ACTION_DOCK_DROP_PX,
   seconds,
   urgent = false,
   caption,
@@ -722,7 +725,10 @@ function SeatDock({
   trailing,
   children,
 }: {
-  spot: { x: number; y: number };
+  spot?: { x: number; y: number };
+  /** `bottom` = chip tray clear of the pad; `seat` = under your hand for actions. */
+  placement?: "seat" | "bottom";
+  dropPx?: number;
   seconds: number | null;
   urgent?: boolean;
   caption?: string;
@@ -730,14 +736,26 @@ function SeatDock({
   trailing?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  const bottomSafe = "max(0.85rem, env(safe-area-inset-bottom))";
+  const seatStyle =
+    spot != null
+      ? {
+          left: `${spot.x}%`,
+          top: `min(calc(${spot.y}% + ${dropPx}px), calc(100% - 52px - ${bottomSafe}))`,
+          transform: "translate(-50%, -50%)",
+        }
+      : undefined;
+  const bottomStyle = {
+    left: "50%",
+    bottom: bottomSafe,
+    top: "auto",
+    transform: "translateX(-50%)",
+  };
+
   return (
     <motion.div
-      className="pointer-events-none absolute z-40 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1.5"
-      style={{
-        left: `${spot.x}%`,
-        // Hang below the tag anchor, but never let the pill run off the bottom edge.
-        top: `min(calc(${spot.y}% + ${DOCK_DROP_PX}px), calc(100% - 38px - env(safe-area-inset-bottom)))`,
-      }}
+      className="pointer-events-none absolute z-40 flex flex-col items-center gap-1.5"
+      style={placement === "bottom" ? bottomStyle : seatStyle}
       initial={{ opacity: 0, scale: 0.85 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.16 } }}

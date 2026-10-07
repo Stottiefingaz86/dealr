@@ -8,7 +8,7 @@ import {
   type TableMediaSessionMessage,
 } from "@live-dealr/realtime";
 import { DEFAULT_TABLE_ID } from "@live-dealr/shared-types";
-import { API_URL } from "./api";
+import { resolveApiUrl } from "./api";
 
 export type StreamStatus = "waiting" | "live" | "offline" | "error";
 
@@ -42,11 +42,17 @@ export function useDealerStream() {
   }, []);
 
   useEffect(() => {
+    const api = resolveApiUrl();
+    if (!api) {
+      setStatus("offline");
+      return;
+    }
+
     let cancelled = false;
 
     void (async () => {
       try {
-        const response = await fetch(`${API_URL}/tables/${DEFAULT_TABLE_ID}/media`);
+        const response = await fetch(`${api}/tables/${DEFAULT_TABLE_ID}/media`);
         if (!response.ok || cancelled) {
           return;
         }
@@ -59,7 +65,7 @@ export function useDealerStream() {
       }
     })();
 
-    const socket = createRealtimeSocket(API_URL);
+    const socket = createRealtimeSocket(api);
     socketRef.current = socket;
     socket.on("connect", () => {
       socket.emit("table:join", {

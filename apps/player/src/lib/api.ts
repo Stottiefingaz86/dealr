@@ -1,26 +1,38 @@
 /**
- * Resolve where the table lives.
+ * Resolve where the Nest table API lives.
  *
- * - Localhost → Nest API on :4000 (same as `pnpm dev`)
- * - Production (Vercel) with no real API URL → `null` → in-browser demo host
- * - Explicit `NEXT_PUBLIC_API_URL` pointing at a hosted API → that URL
+ * - Localhost/dev → Nest on :4000
+ * - Production with a real hosted API URL → that URL
+ * - Production with no API (or a leftover localhost URL) → `null` (in-browser / PeerJS)
+ *
+ * Never return a loopback URL when the page is served from a real host — that
+ * breaks guests on Vercel (wallet, media, sockets silently hit the user's machine).
  */
 export function resolveApiUrl(): string | null {
-  const env = process.env.NEXT_PUBLIC_API_URL?.trim();
+  const env = process.env.NEXT_PUBLIC_API_URL?.trim() || null;
+  const isLoopbackUrl = (url: string) => /localhost|127\.0\.0\.1/i.test(url);
+
   if (typeof window === "undefined") {
-    return env || null;
+    // SSR / build: only trust a non-loopback explicit URL.
+    if (env && !isLoopbackUrl(env)) return env;
+    return null;
   }
+
   const host = window.location.hostname;
   const onLoopback = host === "localhost" || host === "127.0.0.1";
-  if (env && !/localhost|127\.0\.0\.1/.test(env)) {
+
+  if (env && !isLoopbackUrl(env)) {
     return env;
   }
+
   if (onLoopback) {
-    return env || "http://localhost:4000";
+    return "http://localhost:4000";
   }
-  // Deployed frontend, no remote API configured — run the table in-process.
+
   return null;
 }
 
-/** @deprecated prefer resolveApiUrl(); kept for any stray imports */
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+/** Absolute API origin, or empty when the client should not call Nest. */
+export function getApiUrl(): string {
+  return resolveApiUrl() ?? "";
+}
