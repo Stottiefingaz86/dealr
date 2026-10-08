@@ -1,0 +1,13 @@
+**/node_modules
+**/.venv
+**/dist
+**/.next
+**/.turbo
+**/coverage
+**/*.pdf
+.git
+services/dealer-agent/.venv
+apps/*/node_modules
+packages/*/node_modules
+*.log
+.DS_Store

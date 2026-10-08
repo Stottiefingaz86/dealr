@@ -52,9 +52,10 @@ declare global {
 
 async function loadVision(): Promise<VisionMods> {
   if (window.__dealrVisionMods) return window.__dealrVisionMods;
-  const mod = (await import(
-    /* webpackIgnore: true */ "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm"
-  )) as VisionMods;
+  // Dynamic CDN import — keep URL out of TS module resolution.
+  const mod = (await (new Function(
+    "return import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm')",
+  )() as Promise<VisionMods>));
   window.__dealrVisionMods = mod;
   return mod;
 }
@@ -75,9 +76,11 @@ export function PersonCutoutVideo({
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const video = videoRef.current;
-    if (!canvas || !video || !active) return;
+    const canvasEl = canvasRef.current;
+    const videoEl = videoRef.current;
+    if (!canvasEl || !videoEl || !active) return;
+    const canvas = canvasEl;
+    const video = videoEl;
 
     try {
       video.crossOrigin = "anonymous";
@@ -85,8 +88,9 @@ export function PersonCutoutVideo({
       /* ignore */
     }
 
-    const ctx = canvas.getContext("2d", { alpha: true });
-    if (!ctx) return;
+    const ctxEl = canvas.getContext("2d", { alpha: true });
+    if (!ctxEl) return;
+    const ctx = ctxEl;
 
     let disposed = false;
     let raf = 0;

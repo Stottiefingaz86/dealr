@@ -332,8 +332,8 @@ export function TableExperience({
     localPlayerId,
     profileName,
     // clocks intentionally omitted — interval covers them
-    bettingRemaining > 0,
-    actionRemaining > 0,
+    (bettingRemaining ?? 0) > 0,
+    (actionRemaining ?? 0) > 0,
   ]);
 
   // Map throws aimed at the dealer → Isla reacts (with thrower's live hand).

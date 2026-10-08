@@ -4,7 +4,21 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".next/**"]
+      "outputs": ["dist/**", ".next/**"],
+      "env": [
+        "DEEPGRAM_API_KEY",
+        "BEY_API_KEY",
+        "BEY_AVATAR_ID",
+        "BEY_AGENT_ID",
+        "BEY_DEALER_ENABLED",
+        "LIVEKIT_URL",
+        "LIVEKIT_API_KEY",
+        "LIVEKIT_API_SECRET",
+        "OPENAI_API_KEY",
+        "NEXT_PUBLIC_BEY_DEALER",
+        "NEXT_PUBLIC_API_URL",
+        "NEXT_PUBLIC_DEALER_STREAM_URL"
+      ]
     },
     "dev": {
       "cache": false,
