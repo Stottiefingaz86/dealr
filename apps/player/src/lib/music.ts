@@ -93,7 +93,7 @@ interface MusicState {
 
 let audio: HTMLAudioElement | null = null;
 let state: MusicState = { trackId: null, playing: false, position: 0 };
-let volume = 0.35;
+let volume = 0.2;
 const listeners = new Set<() => void>();
 
 function emit() {

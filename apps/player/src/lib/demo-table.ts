@@ -38,44 +38,40 @@ export class DemoTable {
 
   constructor(private readonly sinks: DemoSinks) {
     this.runtime = new TableRuntime(new InMemoryEventStore(), DEFAULT_TABLE_ID);
-    this.crowd = new BotCrowd({
-      say: (bot, text) => {
-        this.sinks.onChat({
-          id: `demo-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          tableId: DEFAULT_TABLE_ID,
-          senderId: bot.id,
-          senderName: bot.displayName,
-          text,
-          kind: "chat",
-          timestamp: new Date().toISOString(),
-        });
+    // Quiet timer promos — demo VO should match /real (table events only), not
+    // a looping Isla monologue in chat.
+    this.crowd = new BotCrowd(
+      {
+        say: (bot, text) => {
+          this.sinks.onChat({
+            id: `demo-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            tableId: DEFAULT_TABLE_ID,
+            senderId: bot.id,
+            senderName: bot.displayName,
+            text,
+            kind: "chat",
+            timestamp: new Date().toISOString(),
+          });
+        },
+        react: (reaction: CrowdReaction) => {
+          this.sinks.onReaction({
+            id: `demo-rx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            tableId: DEFAULT_TABLE_ID,
+            senderId: reaction.senderId,
+            senderName: reaction.senderName,
+            kind: reaction.kind,
+            emoji: reaction.emoji,
+            fromSeat: reaction.fromSeat,
+            toSeat: reaction.toSeat,
+            timestamp: new Date().toISOString(),
+          });
+        },
+        dealerPost: () => {
+          /* disabled via CrowdOptions.dealerPosts */
+        },
       },
-      react: (reaction: CrowdReaction) => {
-        this.sinks.onReaction({
-          id: `demo-rx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          tableId: DEFAULT_TABLE_ID,
-          senderId: reaction.senderId,
-          senderName: reaction.senderName,
-          kind: reaction.kind,
-          emoji: reaction.emoji,
-          fromSeat: reaction.fromSeat,
-          toSeat: reaction.toSeat,
-          timestamp: new Date().toISOString(),
-        });
-      },
-      dealerPost: (text) => {
-        const state = this.runtime.getState();
-        this.sinks.onChat({
-          id: `demo-dealer-${Date.now()}`,
-          tableId: DEFAULT_TABLE_ID,
-          senderId: state.dealer.id,
-          senderName: state.dealer.profile.displayName.split(" ")[0] ?? "Isla",
-          text,
-          kind: "system",
-          timestamp: new Date().toISOString(),
-        });
-      },
-    });
+      { dealerPosts: false },
+    );
   }
 
   start(): void {
@@ -96,6 +92,10 @@ export class DemoTable {
     this.crowd.start(this.runtime.getState());
     this.runtime.openBetting();
     this.sinks.onState(this.runtime.getState());
+  }
+
+  setProfile(displayName: string, avatarUrl?: string | null): void {
+    this.runtime.setLocalProfile(displayName, avatarUrl);
   }
 
   stop(): void {

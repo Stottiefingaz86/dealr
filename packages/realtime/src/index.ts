@@ -52,6 +52,8 @@ export interface JoinTablePayload {
   tableId: string;
   role: ClientRole;
   playerId?: string;
+  displayName?: string;
+  avatarUrl?: string;
 }
 
 export interface PlayerActionPayload {

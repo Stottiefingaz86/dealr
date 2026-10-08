@@ -14,3 +14,4 @@ apps/*/.next
 apps/*/out
 .vercel
 .env*
+services/dealer-agent/.venv

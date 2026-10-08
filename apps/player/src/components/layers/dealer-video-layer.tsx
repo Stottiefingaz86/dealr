@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { ChromaKeyVideo, type ChromaKeyOptions } from "./chroma-key-video";
+import { PersonCutoutVideo } from "./person-cutout-video";
 
 export type FeedStatus = "idle" | "loading" | "live" | "error";
 
@@ -20,6 +21,7 @@ export const PHONE_TOP = 0.2;
  *
  * Desktop stays a centred 16:9 letterbox sized by viewport height — do not grow
  * toward ultrawide width; that blew up the felt and buried pads under the UI.
+ * Never change this for AI/stream mode — table geometry is keyed off frame.width.
  */
 export function dealerFrameFor(w: number, h: number) {
   if (w <= 640) {
@@ -68,6 +70,8 @@ export function DealerVideoLayer({
   keyOptions,
   onStatusChange,
   videoRef: externalRef,
+  /** LiveKit / Beyond Presence attaches tracks to the shared <video> ref. */
+  streamMode = false,
 }: {
   /** Playback candidates, best first (browser picks the first it can decode). */
   sources: string[];
@@ -77,6 +81,7 @@ export function DealerVideoLayer({
   onStatusChange?: (status: FeedStatus) => void;
   /** Share the <video> so other layers (table reflection) can key the same frames. */
   videoRef?: RefObject<HTMLVideoElement | null>;
+  streamMode?: boolean;
 }) {
   const ownRef = useRef<HTMLVideoElement>(null);
   const videoRef = externalRef ?? ownRef;
@@ -93,18 +98,22 @@ export function DealerVideoLayer({
     }
     setStatus("loading");
     const onPlaying = () => setStatus("live");
-    const onError = () => setStatus("error");
+    const onError = () => {
+      if (!streamMode) setStatus("error");
+    };
     video.addEventListener("playing", onPlaying);
     video.addEventListener("error", onError);
-    void video.play().catch(() => {
-      // Autoplay is muted so this rarely fails; status flips on `playing`.
-    });
+    if (!streamMode) {
+      void video.play().catch(() => {
+        // Autoplay is muted so this rarely fails; status flips on `playing`.
+      });
+    }
     return () => {
       video.removeEventListener("playing", onPlaying);
       video.removeEventListener("error", onError);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sources.join("|")]);
+  }, [sources.join("|"), streamMode]);
 
   const live = status === "live";
   const rootRef = useRef<HTMLDivElement>(null);
@@ -117,30 +126,27 @@ export function DealerVideoLayer({
       className="pointer-events-none absolute inset-0 z-[3] overflow-hidden"
       aria-hidden={!live}
     >
-      {/* Source — hidden when keyed; the canvas is what you see */}
+      {/* Hidden source — keyed/cutout canvases paint what you see */}
       <video
         ref={videoRef}
-        className={
-          keyed
-            ? "pointer-events-none absolute size-px opacity-0"
-            : `absolute inset-0 size-full object-cover ${live ? "" : "opacity-0"}`
-        }
+        className="pointer-events-none absolute size-px opacity-0"
         autoPlay
         muted
-        loop
+        loop={!streamMode}
         playsInline
         crossOrigin="anonymous"
-        preload="auto"
+        preload={streamMode ? "none" : "auto"}
         aria-label={`${dealerName} live`}
       >
-        {sources.map((source) => (
-          <source key={source} src={source} type={mimeFor(source)} />
-        ))}
+        {!streamMode
+          ? sources.map((source) => (
+              <source key={source} src={source} type={mimeFor(source)} />
+            ))
+          : null}
       </video>
 
       {keyed && frame ? (
         <div
-          // Same rectangle as TableScene — keeps her glued to the felt on any monitor.
           className="absolute transition-opacity duration-700"
           style={{
             opacity: live ? 1 : 0,
@@ -150,30 +156,43 @@ export function DealerVideoLayer({
             height: frame.height,
           }}
         >
-          {/* Soft presence glow behind her so she separates from the room */}
           <div
             className="absolute inset-x-[20%] top-[10%] bottom-0 rounded-[50%] blur-3xl"
             style={{ background: "rgba(255,255,255,0.05)" }}
           />
-          <ChromaKeyVideo
-            videoRef={videoRef}
-            active={live || status === "loading"}
-            options={keyOptions}
-            className="relative size-full"
-            style={{
-              filter: "contrast(1.04) saturate(1.05) drop-shadow(0 18px 30px rgba(0,0,0,0.55))",
-            }}
-          />
-          {/* Invisible throw target on her face / upper torso */}
+          {streamMode ? (
+            <div className="absolute inset-x-0 top-[2%] bottom-[26%] flex items-end justify-center">
+              <PersonCutoutVideo
+                videoRef={videoRef}
+                active={live || status === "loading"}
+                className="h-full w-auto max-w-[72%]"
+                style={{
+                  filter: "contrast(1.05) saturate(1.06) drop-shadow(0 18px 30px rgba(0,0,0,0.55))",
+                }}
+              />
+            </div>
+          ) : (
+            <ChromaKeyVideo
+              videoRef={videoRef}
+              active={live || status === "loading"}
+              options={keyOptions}
+              className="relative size-full"
+              style={{
+                filter: "contrast(1.04) saturate(1.05) drop-shadow(0 18px 30px rgba(0,0,0,0.55))",
+              }}
+            />
+          )}
           <div
             data-seat-anchor={0}
-            className="pointer-events-none absolute left-1/2 top-[18%] h-[28%] w-[22%] -translate-x-1/2"
+            className="pointer-events-none absolute left-1/2 top-[22%] h-[32%] w-[18%] -translate-x-1/2"
             aria-hidden
           />
         </div>
       ) : null}
 
-      {!live ? <FeedWaiting dealerName={dealerName} status={status} /> : null}
+      {!live ? (
+        <FeedWaiting dealerName={dealerName} status={status} streamMode={streamMode} />
+      ) : null}
     </div>
   );
 }
@@ -186,13 +205,28 @@ function mimeFor(url: string): string | undefined {
   return undefined;
 }
 
-function FeedWaiting({ dealerName, status }: { dealerName: string; status: FeedStatus }) {
-  const copy = status === "error" ? "Dealer feed unavailable." : "Connecting to the dealer…";
+function FeedWaiting({
+  dealerName,
+  status,
+  streamMode,
+}: {
+  dealerName: string;
+  status: FeedStatus;
+  streamMode?: boolean;
+}) {
+  const copy =
+    status === "error"
+      ? "Dealer feed unavailable."
+      : streamMode
+        ? "Isla is joining the table…"
+        : "Connecting to the dealer…";
 
   return (
     <div className="absolute inset-x-0 top-[13%] flex justify-center">
       <div className="w-[min(92vw,400px)] text-center">
-        <p className="text-[11px] tracking-[0.34em] text-white/40 uppercase">Live</p>
+        <p className="text-[11px] tracking-[0.34em] text-white/40 uppercase">
+          {streamMode ? "AI dealer" : "Live"}
+        </p>
         <h2 className="mt-2 font-display text-4xl leading-none text-white drop-shadow-lg">
           {dealerName}
         </h2>

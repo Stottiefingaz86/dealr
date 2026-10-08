@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import type { DealerHighlight, DealerProfile, DealerRecommendation } from "@live-dealr/shared-types";
 import { cn } from "@live-dealr/ui/lib/utils";
-import { Drawer, DrawerContent, DrawerHandle } from "@/components/ui/drawer";
+import { DockOrDrawer } from "@/components/dock-or-drawer";
 import { useDrawerDirection } from "@/hooks/use-mobile";
 import { DealerAvatar } from "@/components/dealer-avatar";
 
@@ -51,6 +51,7 @@ export function DealerDrawer({
   balance,
   onFollow,
   onTip,
+  docked = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -60,6 +61,7 @@ export function DealerDrawer({
   balance: number;
   onFollow: (next: boolean) => void;
   onTip: (amount: number) => void;
+  docked?: boolean;
 }) {
   const direction = useDrawerDirection();
   const [tipOpen, setTipOpen] = useState(false);
@@ -73,23 +75,18 @@ export function DealerDrawer({
   const firstName = profile.displayName.split(" ")[0] ?? profile.displayName;
 
   return (
-    <Drawer
+    <DockOrDrawer
       open={open}
       onOpenChange={onOpenChange}
+      docked={docked}
       direction={direction}
-      shouldScaleBackground={false}
-      dismissible={false}
+      overlayClassName={cn(
+        "border-white/8 bg-[#0b0b0f]",
+        direction === "bottom"
+          ? "inset-x-0 bottom-0 h-[94dvh] max-h-[94dvh] rounded-t-[16px]"
+          : "inset-y-0 right-0 h-full w-full max-w-[26rem] border-l",
+      )}
     >
-      <DrawerContent
-        className={cn(
-          "border-white/8 bg-[#0b0b0f]",
-          direction === "bottom"
-            ? "inset-x-0 bottom-0 h-[94dvh] max-h-[94dvh] rounded-t-[16px]"
-            : "inset-y-0 right-0 h-full w-full max-w-[26rem] border-l",
-        )}
-      >
-        {direction === "bottom" ? <DrawerHandle /> : null}
-
         <header className="flex shrink-0 items-center justify-between px-2 py-1.5">
           <button
             type="button"
@@ -258,8 +255,7 @@ export function DealerDrawer({
             )}
           </Locked>
         </div>
-      </DrawerContent>
-    </Drawer>
+    </DockOrDrawer>
   );
 }
 

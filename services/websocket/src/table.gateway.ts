@@ -92,6 +92,9 @@ export class TableGateway implements OnGatewayInit {
   handleJoin(@ConnectedSocket() client: Socket, @MessageBody() body: JoinTablePayload) {
     const room = `table:${body.tableId}`;
     void client.join(room);
+    if (body.displayName?.trim()) {
+      requireTables().setLocalProfile(body.displayName, body.avatarUrl ?? null);
+    }
     client.emit(ServerEvents.tableState, { state: requireTables().getState() });
     client.emit(ServerEvents.tableEvents, { events: requireTables().getEvents() });
     client.emit(ServerEvents.chatHistory, { messages: this.chat.list() });

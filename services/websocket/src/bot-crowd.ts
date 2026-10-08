@@ -23,6 +23,13 @@ interface CrowdSinks {
   dealerPost: (text: string) => void;
 }
 
+export type CrowdOptions = {
+  /** Timer-rotated Isla promo lines in chat. Default true. */
+  dealerPosts?: boolean;
+  /** Occasional idle bot chat. Default true. */
+  idleChatter?: boolean;
+};
+
 /** Dealer-channel promos — follow CTA, GOTW, clips, schedule. */
 export const DEALER_POSTS = [
   "Welcome in 👋 Follow my Dealr page for tonight's clips & picks",
@@ -97,15 +104,23 @@ export class BotCrowd {
   private lastSpoke = new Map<string, number>();
   private seenEvents = new Set<string>();
   private readonly pending: Array<ReturnType<typeof setTimeout>> = [];
+  private readonly dealerPosts: boolean;
+  private readonly idleChatter: boolean;
 
-  constructor(private readonly sinks: CrowdSinks) {}
+  constructor(
+    private readonly sinks: CrowdSinks,
+    opts: CrowdOptions = {},
+  ) {
+    this.dealerPosts = opts.dealerPosts !== false;
+    this.idleChatter = opts.idleChatter !== false;
+  }
 
   start(initial: GameState): void {
     this.state = initial;
-    this.scheduleIdle();
+    if (this.idleChatter) this.scheduleIdle();
     this.scheduleEmote();
-    // First promo lands fast so chat isn't empty when someone opens it.
-    this.scheduleDealerPost(2500);
+    // Promo timer — skip on quiet demo so Isla isn't a nonstop chat bot.
+    if (this.dealerPosts) this.scheduleDealerPost(2500);
   }
 
   stop(): void {

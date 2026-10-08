@@ -93,6 +93,11 @@ export class TableControllerService {
     return this.getState();
   }
 
+  setLocalProfile(displayName: string, avatarUrl?: string | null): GameState {
+    this.runtime.setLocalProfile(displayName, avatarUrl);
+    return this.getState();
+  }
+
   tipDealer(playerId: string, amount: number): number {
     return this.runtime.tipDealer(playerId, amount);
   }

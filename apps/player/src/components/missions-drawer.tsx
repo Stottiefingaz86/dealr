@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { Check, ChevronLeft, Lock, Target } from "lucide-react";
 import { cn } from "@live-dealr/ui/lib/utils";
-import { Drawer, DrawerContent, DrawerHandle } from "@/components/ui/drawer";
+import { DockOrDrawer } from "@/components/dock-or-drawer";
 import { useDrawerDirection } from "@/hooks/use-mobile";
 import { claimable, MISSIONS, type Mission, type MissionBook } from "@/lib/missions";
 
@@ -59,12 +59,14 @@ export function MissionsDrawer({
   book,
   unlocks,
   onClaim,
+  docked = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   book: MissionBook;
   unlocks: ReadonlySet<string>;
   onClaim: (mission: Mission, buttonEl?: HTMLElement) => void;
+  docked?: boolean;
 }) {
   const direction = useDrawerDirection();
   const ready = MISSIONS.filter(
@@ -79,23 +81,18 @@ export function MissionsDrawer({
   const cosmetic = MISSIONS.filter((m) => m.reward.kind !== "cashback");
 
   return (
-    <Drawer
+    <DockOrDrawer
       open={open}
       onOpenChange={onOpenChange}
+      docked={docked}
       direction={direction}
-      shouldScaleBackground={false}
-      dismissible={false}
+      overlayClassName={cn(
+        "border-white/8 bg-[#0b0b0f]",
+        direction === "bottom"
+          ? "inset-x-0 bottom-0 h-[88dvh] max-h-[88dvh] rounded-t-[16px]"
+          : "inset-y-0 right-0 h-full w-full max-w-[24rem] border-l",
+      )}
     >
-      <DrawerContent
-        className={cn(
-          "border-white/8 bg-[#0b0b0f]",
-          direction === "bottom"
-            ? "inset-x-0 bottom-0 h-[88dvh] max-h-[88dvh] rounded-t-[16px]"
-            : "inset-y-0 right-0 h-full w-full max-w-[24rem] border-l",
-        )}
-      >
-        {direction === "bottom" ? <DrawerHandle /> : null}
-
         <header className="flex shrink-0 items-center justify-between px-2 py-1.5">
           <button
             type="button"
@@ -203,8 +200,7 @@ export function MissionsDrawer({
             </ul>
           </section>
         </div>
-      </DrawerContent>
-    </Drawer>
+    </DockOrDrawer>
   );
 }
 

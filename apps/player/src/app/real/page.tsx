@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Camera, Link2, Copy, Check } from "lucide-react";
+import { DEFAULT_TABLE_ID } from "@live-dealr/shared-types";
 import { TableExperience } from "@/components/table-experience";
-import { playGoodEvening, preloadDealerTalk } from "@/lib/dealer-talk";
-import { speakPlayerCount } from "@/lib/dealer-voice";
-import { unlockAudio } from "@/lib/chip-sound";
+import { unlockAudio, preloadChipSfx } from "@/lib/chip-sound";
+import { ensureAmbience, setMusicVolume } from "@/lib/music";
+import { preloadRewardClaim } from "@/lib/turn-sound";
 import { generateRoomCode, peerIdForRoom } from "@/lib/live-room";
 import {
   compressAvatarFile,
@@ -15,8 +16,8 @@ import {
   saveProfile,
   sanitizeGameId,
 } from "@/lib/player-profile";
+import { warmBeyDealer } from "@/lib/warm-bey";
 import { useLiveTable, type LiveRole } from "@/lib/use-live-table";
-import { usePlayerStore } from "@/lib/store";
 
 type LobbyState =
   | { step: "lobby" }
@@ -43,6 +44,14 @@ export default function RealTablePage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const joining = Boolean(invite.gameId) && !invite.isHostFlag;
+
+  // Warm Isla while they set up — same LiveKit room as the felt.
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_BEY_DEALER !== "1") return;
+    warmBeyDealer(`dealr-${DEFAULT_TABLE_ID.slice(0, 40)}`, saved.name || "Player", {
+      force: false,
+    });
+  }, [saved.name]);
 
   if (lobby.step === "table") {
     return (
@@ -74,9 +83,15 @@ export default function RealTablePage() {
 
   function enterTable(role: LiveRole, gameId: string) {
     unlockAudio();
-    preloadDealerTalk();
+    setMusicVolume(0.2);
+    ensureAmbience();
+    void preloadChipSfx();
+    preloadRewardClaim();
     const trimmed = name.trim() || (role === "host" ? "Host" : "Player");
     saveProfile(trimmed, avatarUrl);
+    if (process.env.NEXT_PUBLIC_BEY_DEALER === "1") {
+      warmBeyDealer(`dealr-${DEFAULT_TABLE_ID.slice(0, 40)}`, trimmed, { force: false });
+    }
     setBusy(true);
     const url = new URL(window.location.href);
     url.searchParams.set("g", gameId);
@@ -254,31 +269,14 @@ function LiveTable({
   onLeave: () => void;
 }) {
   const live = useLiveTable({ roomCode, name, role, avatarUrl, enabled: true });
-  const playerCount = usePlayerStore((s) => s.state?.players.length ?? 0);
-  const prevCount = useRef<number | null>(null);
   const [copied, setCopied] = useState(false);
   const shareUrl = gameLink(roomCode);
 
   useEffect(() => {
-    preloadDealerTalk();
-  }, []);
-
-  const greetedRef = useRef(false);
-  useEffect(() => {
-    if (!live.ready || greetedRef.current) return;
-    greetedRef.current = true;
     unlockAudio();
-    playGoodEvening({ force: true, name });
-  }, [live.ready, name]);
-
-  useEffect(() => {
-    if (!live.ready) return;
-    if (prevCount.current !== null && playerCount > prevCount.current) {
-      // New arrival — announce count only (skip another "good evening").
-      void speakPlayerCount(playerCount);
-    }
-    prevCount.current = playerCount;
-  }, [playerCount, live.ready]);
+    setMusicVolume(0.2);
+    ensureAmbience();
+  }, []);
 
   async function copyLink() {
     try {
@@ -339,7 +337,13 @@ function LiveTable({
           </button>
         </div>
       </div>
-      <TableExperience playerId={live.playerId} actions={live} skipJoinGreet />
+      <TableExperience
+        playerId={live.playerId}
+        actions={live}
+        playerName={name}
+        avatarUrl={avatarUrl}
+        skipJoinGreet
+      />
     </div>
   );
 }

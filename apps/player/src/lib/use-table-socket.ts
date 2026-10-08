@@ -20,6 +20,7 @@ import {
 } from "@live-dealr/shared-types";
 import { resolveApiUrl } from "./api";
 import { DemoTable } from "./demo-table";
+import { loadProfile } from "./player-profile";
 import { usePlayerStore } from "./store";
 
 const API_FALLBACK_MS = 1500;
@@ -29,12 +30,16 @@ function startDemo(
   demoRef: { current: DemoTable | null },
   setConnected: (v: boolean) => void,
   setChat: (m: ChatMessage[]) => void,
+  profile?: { displayName?: string; avatarUrl?: string | null },
 ) {
   const demo = new DemoTable(sinks);
   demoRef.current = demo;
   setConnected(true);
   setChat([]);
   demo.start();
+  if (profile?.displayName?.trim()) {
+    demo.setProfile(profile.displayName, profile.avatarUrl);
+  }
   return () => {
     demo.stop();
     demoRef.current = null;
@@ -42,8 +47,14 @@ function startDemo(
   };
 }
 
-export function useTableSocket(opts?: { enabled?: boolean }) {
+export function useTableSocket(opts?: {
+  enabled?: boolean;
+  displayName?: string;
+  avatarUrl?: string | null;
+}) {
   const enabled = opts?.enabled ?? true;
+  const displayName = opts?.displayName?.trim() || "";
+  const avatarUrl = opts?.avatarUrl ?? null;
   const socketRef = useRef<Socket | null>(null);
   const demoRef = useRef<DemoTable | null>(null);
   const setConnected = usePlayerStore((s) => s.setConnected);
@@ -69,7 +80,10 @@ export function useTableSocket(opts?: { enabled?: boolean }) {
 
     // Production static host (or missing API) → run the full table in the browser.
     if (!apiUrl) {
-      return startDemo(sinks, demoRef, setConnected, setChat);
+      return startDemo(sinks, demoRef, setConnected, setChat, {
+        displayName,
+        avatarUrl,
+      });
     }
 
     const socket = createRealtimeSocket(apiUrl);
@@ -84,7 +98,10 @@ export function useTableSocket(opts?: { enabled?: boolean }) {
       usingDemo = true;
       socket.disconnect();
       socketRef.current = null;
-      stopDemo = startDemo(sinks, demoRef, setConnected, setChat);
+      stopDemo = startDemo(sinks, demoRef, setConnected, setChat, {
+        displayName,
+        avatarUrl,
+      });
     };
 
     fallbackTimer = setTimeout(() => {
@@ -95,10 +112,13 @@ export function useTableSocket(opts?: { enabled?: boolean }) {
       if (fallbackTimer) clearTimeout(fallbackTimer);
       if (usingDemo) return;
       setConnected(true);
+      const profile = displayName || loadProfile().name.trim();
       socket.emit(ClientEvents.joinTable, {
         tableId: DEFAULT_TABLE_ID,
         role: "player",
         playerId: DEFAULT_PLAYER_ID,
+        displayName: profile || undefined,
+        avatarUrl: avatarUrl || loadProfile().avatarUrl || undefined,
       });
     });
     socket.on("connect_error", () => {
@@ -135,7 +155,18 @@ export function useTableSocket(opts?: { enabled?: boolean }) {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [enabled, appendChat, appendEvent, pushReaction, setChat, setConnected, setEvents, setState]);
+  }, [
+    enabled,
+    displayName,
+    avatarUrl,
+    appendChat,
+    appendEvent,
+    pushReaction,
+    setChat,
+    setConnected,
+    setEvents,
+    setState,
+  ]);
 
   return {
     playerId: DEFAULT_PLAYER_ID,
@@ -236,11 +267,12 @@ export function useTableSocket(opts?: { enabled?: boolean }) {
       if (!trimmed) {
         return;
       }
+      const senderName = displayName || loadProfile().name.trim() || "You";
       appendChat({
         id: `local-${Date.now()}`,
         tableId: DEFAULT_TABLE_ID,
         senderId: DEFAULT_PLAYER_ID,
-        senderName: "You",
+        senderName,
         text: trimmed,
         kind: "chat",
         timestamp: new Date().toISOString(),
@@ -248,7 +280,7 @@ export function useTableSocket(opts?: { enabled?: boolean }) {
       socketRef.current?.emit(ClientEvents.sendChat, {
         tableId: DEFAULT_TABLE_ID,
         senderId: DEFAULT_PLAYER_ID,
-        senderName: "You",
+        senderName,
         text: trimmed,
       });
     },

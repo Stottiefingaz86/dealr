@@ -32,8 +32,11 @@ const ONES = [
 const TENS = ["", "", "twenty", "thirty"];
 
 let queue: Promise<void> = Promise.resolve();
+let queueDepth = 0;
 let currentAudio: HTMLAudioElement | null = null;
 let voiceAvailable: boolean | null = null;
+/** Cap backlog so fast demo rounds don't become a nonstop monologue. */
+const MAX_SPEAK_QUEUE = 1;
 
 export function numberWords(n: number): string {
   const v = Math.floor(n);
@@ -145,14 +148,25 @@ export function speakDealer(text: string): Promise<boolean> {
   if (line === lastLine && now - lastLineAt < 2800) {
     return Promise.resolve(true);
   }
+
+  // Already speaking + one waiting — drop rather than stack every hand total.
+  if (queueDepth >= MAX_SPEAK_QUEUE) {
+    return Promise.resolve(false);
+  }
+
   lastLine = line;
   lastLineAt = now;
+  queueDepth += 1;
 
   const job = queue.then(async () => {
-    const blob = await fetchSpeech(line);
-    if (!blob) return false;
-    await playBlob(blob);
-    return true;
+    try {
+      const blob = await fetchSpeech(line);
+      if (!blob) return false;
+      await playBlob(blob);
+      return true;
+    } finally {
+      queueDepth = Math.max(0, queueDepth - 1);
+    }
   });
   queue = job.then(
     () => undefined,

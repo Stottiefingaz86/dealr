@@ -22,6 +22,7 @@ import { SeatActionBurst } from "./seat-action-burst";
 import { TurnOrb } from "./turn-orb";
 import { PlayerAvatar } from "./player-avatar";
 import { ChromaKeyVideo } from "./layers/chroma-key-video";
+import { CutoutMirror } from "./layers/person-cutout-video";
 import { sceneHue } from "@/lib/scene-hue";
 import {
   dealerFrameFor,
@@ -67,7 +68,8 @@ const SEAT_POS_COMPACT: ReadonlyArray<readonly [number, number]> = [
   [16, 40],
   [84, 40],
 ];
-const DEALER = { x: 50, y: 8 };
+/** Dealer hand on the felt, just below the back rail. */
+const DEALER = { x: 50, y: 14 };
 /** How long the bet pad takes to open, swallow the chips and close. */
 const PAD_CLOSE_SECONDS = 1.2;
 
@@ -124,6 +126,7 @@ export function TableScene({
   onSit,
   localDock,
   dealerVideoRef,
+  streamMode = false,
 }: {
   settings: PlayerEnvironmentSettings;
   phase: TablePhase | undefined;
@@ -138,6 +141,8 @@ export function TableScene({
   localDock?: ReactNode;
   /** Keyed dealer <video>; reflected on the glass so she reads as standing at the table. */
   dealerVideoRef?: RefObject<HTMLVideoElement | null>;
+  /** Beyond Presence live feed — no green screen; reflection must cut out too. */
+  streamMode?: boolean;
 }) {
   const motionLevel = settings.reducedMotion ? 0 : ANIMATION_INTENSITY[settings.animationIntensity];
   const hue = sceneHue(settings);
@@ -158,10 +163,11 @@ export function TableScene({
     return () => setSeatLayoutCompact(false);
   }, [cropped]);
 
+  // Cap hard — letting unit climb with ultrawide frames blew up cards/pads.
   const unit = ready
     ? Math.max(
-        cropped ? 0.55 : 0.75,
-        Math.min(cropped ? 0.95 : 1.35, frame.width / REFERENCE_FRAME_WIDTH),
+        cropped ? 0.55 : 0.72,
+        Math.min(cropped ? 0.9 : 1.0, frame.width / REFERENCE_FRAME_WIDTH),
       )
     : 1;
   const planeV = cropped ? PLANE_V_COMPACT : PLANE_V;
@@ -207,7 +213,12 @@ export function TableScene({
 
           {/* Dealer reflection + contact shadow on the glass */}
           {dealerVideoRef ? (
-            <DealerReflection videoRef={dealerVideoRef} frame={frame} planeTop={plane.top} />
+            <DealerReflection
+              videoRef={dealerVideoRef}
+              frame={frame}
+              planeTop={plane.top}
+              streamMode={streamMode}
+            />
           ) : null}
 
           {/* Dealer hand — far centre of the felt */}
@@ -580,12 +591,21 @@ function DealerReflection({
   videoRef,
   frame,
   planeTop,
+  streamMode,
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
   frame: DealerFrame;
   planeTop: number;
+  streamMode: boolean;
 }) {
   const visible = Math.max(0, planeTop - frame.top); // portion of her above the table edge, px
+  const mirrorStyle = {
+    height: frame.height,
+    top: visible,
+    transformOrigin: "50% 0%",
+    transform: "scaleY(-1)",
+    filter: "blur(1.5px) saturate(0.7) brightness(0.9)",
+  } as const;
   return (
     <>
       <div
@@ -600,17 +620,19 @@ function DealerReflection({
             "linear-gradient(180deg, rgba(0,0,0,0.9), rgba(0,0,0,0.25) 45%, transparent 80%)",
         }}
       >
-        <ChromaKeyVideo
-          videoRef={videoRef}
-          className="absolute left-0 w-full"
-          style={{
-            height: frame.height,
-            top: visible,
-            transformOrigin: "50% 0%",
-            transform: "scaleY(-1)",
-            filter: "blur(1.5px) saturate(0.7) brightness(0.9)",
-          }}
-        />
+        {streamMode ? (
+          <CutoutMirror
+            className="absolute left-0 w-full object-cover object-bottom"
+            style={mirrorStyle}
+            active
+          />
+        ) : (
+          <ChromaKeyVideo
+            videoRef={videoRef}
+            className="absolute left-0 w-full"
+            style={mirrorStyle}
+          />
+        )}
       </div>
       {/* Contact shadow where she meets the table */}
       <div
@@ -997,10 +1019,17 @@ function Seat({
             </motion.div>
           ) : null}
         </AnimatePresence>
+        {/* After betting: bet $ lives on the name tag only — no leftover chips under cards */}
       </FlatGroup>
 
-      {/* Player cards — land on the spot where the chips went in */}
-      <FlatGroup x={geo.cards.x} y={geo.cards.y} rotate={-geo.angle} scale={sc}>
+      {/* Player cards — above the pad; z so outer seats aren't buried under tags */}
+      <FlatGroup
+        x={geo.cards.x}
+        y={geo.cards.y}
+        rotate={-geo.angle}
+        scale={sc}
+        className="z-10"
+      >
         <CardFan cards={model.cards} size="md" total={model.handTotal} />
       </FlatGroup>
 

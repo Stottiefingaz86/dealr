@@ -10,7 +10,7 @@ import {
   type TableEffectId,
 } from "@live-dealr/shared-types";
 import { cn } from "@live-dealr/ui/lib/utils";
-import { Drawer, DrawerContent, DrawerHandle } from "@/components/ui/drawer";
+import { DockOrDrawer } from "@/components/dock-or-drawer";
 import { useDrawerDirection } from "@/hooks/use-mobile";
 import { BackgroundEffectSwatch } from "@/components/layers/background-effects";
 import { TableEffectSwatch } from "@/components/table-effect-swatch";
@@ -22,43 +22,30 @@ export function AtmosphereDrawer({
   onOpenChange,
   settings,
   onChange,
+  docked = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   settings: PlayerEnvironmentSettings;
   onChange: (patch: Partial<PlayerEnvironmentSettings>) => void;
+  docked?: boolean;
 }) {
   const direction = useDrawerDirection();
   const music = useMusic(settings.ambientVolume);
 
   return (
-    <Drawer
+    <DockOrDrawer
       open={open}
       onOpenChange={onOpenChange}
+      docked={docked}
       direction={direction}
-      shouldScaleBackground={false}
-      dismissible={false}
-      modal
+      overlayClassName={cn(
+        "border-white/8 bg-[#121218]",
+        direction === "bottom"
+          ? "inset-x-0 bottom-0 h-[78dvh] max-h-[78dvh] rounded-t-[14px]"
+          : "inset-y-0 right-0 h-full w-full max-w-sm border-l",
+      )}
     >
-      <DrawerContent
-        className={cn(
-          "border-white/8 bg-[#121218]",
-          direction === "bottom"
-            ? "inset-x-0 bottom-0 h-[78dvh] max-h-[78dvh] rounded-t-[14px]"
-            : "inset-y-0 right-0 h-full w-full max-w-sm border-l",
-        )}
-        onPointerDownOutside={(event) => {
-          // Close only on intentional outside tap — not slider drag that leaves the sheet.
-          if (event.detail?.originalEvent instanceof PointerEvent) {
-            const pe = event.detail.originalEvent;
-            if (pe.pointerType === "touch" || pe.buttons === 1) {
-              // allow close on clean outside click
-            }
-          }
-        }}
-      >
-        {direction === "bottom" ? <DrawerHandle /> : null}
-
         <header className="flex shrink-0 items-center gap-2 border-b border-white/8 px-4 py-3">
           <button
             type="button"
@@ -302,8 +289,7 @@ export function AtmosphereDrawer({
             </label>
           </section>
         </div>
-      </DrawerContent>
-    </Drawer>
+    </DockOrDrawer>
   );
 }
 

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import { DEFAULT_PLAYER_ID } from "@live-dealr/shared-types";
 import { cn } from "@live-dealr/ui/lib/utils";
-import { Drawer, DrawerContent, DrawerHandle } from "@/components/ui/drawer";
+import { DockOrDrawer } from "@/components/dock-or-drawer";
 import { useDrawerDirection } from "@/hooks/use-mobile";
 import { resolveApiUrl } from "@/lib/api";
 import { formatMoney } from "@/lib/chips";
@@ -15,10 +15,12 @@ export function WalletDrawer({
   open,
   onOpenChange,
   balance,
+  docked = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   balance: number;
+  docked?: boolean;
 }) {
   const direction = useDrawerDirection();
   const [action, setAction] = useState<"deposit" | "withdraw">("deposit");
@@ -53,23 +55,18 @@ export function WalletDrawer({
   }
 
   return (
-    <Drawer
+    <DockOrDrawer
       open={open}
       onOpenChange={onOpenChange}
+      docked={docked}
       direction={direction}
-      shouldScaleBackground={false}
-      dismissible={false}
+      overlayClassName={cn(
+        "border-white/10 bg-[#0e0e12]",
+        direction === "bottom"
+          ? "inset-x-0 bottom-0 h-[70dvh] max-h-[70dvh] rounded-t-2xl"
+          : "inset-y-0 right-0 h-full w-full max-w-xs border-l",
+      )}
     >
-      <DrawerContent
-        className={cn(
-          "border-white/10 bg-[#0e0e12]",
-          direction === "bottom"
-            ? "inset-x-0 bottom-0 h-[70dvh] max-h-[70dvh] rounded-t-2xl"
-            : "inset-y-0 right-0 h-full w-full max-w-xs border-l",
-        )}
-      >
-        {direction === "bottom" ? <DrawerHandle /> : null}
-
         <header className="flex shrink-0 items-center gap-2 px-4 py-3">
           <button
             type="button"
@@ -142,7 +139,6 @@ export function WalletDrawer({
 
           {message ? <p className="mt-4 text-center text-sm text-white/50">{message}</p> : null}
         </div>
-      </DrawerContent>
-    </Drawer>
+    </DockOrDrawer>
   );
 }

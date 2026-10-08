@@ -106,6 +106,18 @@ export class TableRuntime {
    * reclaiming the same playerId returns their existing seat.
    * Pass `preferredSeat` to sit at a specific open chair.
    */
+  /** Update the seated local player's name/avatar (start screen → table). */
+  setLocalProfile(displayName: string, avatarUrl?: string | null): void {
+    const player = this.state.players.find((p) => p.id === DEFAULT_PLAYER_ID);
+    if (!player) return;
+    const next = displayName.trim();
+    if (next) player.displayName = next;
+    if (avatarUrl !== undefined) {
+      player.avatarUrl = avatarUrl || undefined;
+    }
+    this.publishState();
+  }
+
   claimSeat(
     displayName: string,
     playerId = crypto.randomUUID(),
@@ -318,12 +330,41 @@ export class TableRuntime {
       return;
     }
     this.clearTimers();
+    // Confirm-bet / early close used to skip bots still on a delayed bet timer —
+    // force every tablemate in so seats show chips + get dealt cards.
+    if (this.mode === "demo") {
+      this.ensureBotBets();
+    }
     const active = this.state.players.filter((p) => p.currentBet >= MIN_BET);
     if (active.length === 0) {
       this.openBetting();
       return;
     }
     this.beginDeal(active);
+  }
+
+  /** Drop a quick stack for any bot that hasn't bet yet this round. */
+  private ensureBotBets(): void {
+    for (const bot of this.state.players.filter((p) => isBot(p.id))) {
+      if (bot.currentBet >= MIN_BET) continue;
+      const picks = this.pickBotChips(bot);
+      for (const value of picks) {
+        try {
+          this.addChip(bot.id, value);
+        } catch {
+          break;
+        }
+      }
+      // Hard guarantee — every tablemate must show a bet + get dealt.
+      if (bot.currentBet < MIN_BET) {
+        const chip: ChipValue = bot.demoCredits >= 25 ? 25 : bot.demoCredits >= 5 ? 5 : 1;
+        if (bot.demoCredits >= chip) {
+          bot.chipStack = [chip];
+          bot.currentBet = chip;
+        }
+      }
+    }
+    this.publishState();
   }
 
   tipDealer(playerId: string, amount: number): number {
@@ -359,7 +400,8 @@ export class TableRuntime {
 
   private scheduleBotBets(): void {
     for (const bot of this.state.players.filter((p) => isBot(p.id))) {
-      const delay = 1200 + Math.random() * 9000;
+      // Land early so chips/hands show even if the human confirms quickly.
+      const delay = 350 + Math.random() * 1600;
       const timer = setTimeout(() => {
         if (this.state.table.phase !== "betting") {
           return;

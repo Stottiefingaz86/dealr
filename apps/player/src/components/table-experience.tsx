@@ -6,6 +6,8 @@ import { Check, MessageSquare, PenLine, RotateCcw, SlidersHorizontal, Undo2 } fr
 import {
   CHIP_VALUES,
   DEFAULT_PLAYER_ID,
+  DEFAULT_TABLE_ID,
+  type Card,
   type ChipValue,
   type Hand,
   type Player,
@@ -29,6 +31,9 @@ import { DealerAvatar } from "./dealer-avatar";
 import { WalletDrawer } from "./wallet-drawer";
 import { AtmosphereDrawer } from "./atmosphere-drawer";
 import { MissionsButton, MissionsDrawer } from "./missions-drawer";
+import { PanelDock } from "./panel-dock";
+import { cn } from "@live-dealr/ui/lib/utils";
+import { buildBeyTableSummary, useBeyDealer } from "@/lib/use-bey-dealer";
 import { WinConfetti } from "./win-confetti";
 import { PlayerMenu } from "./player-menu";
 import {
@@ -61,6 +66,7 @@ import { ensureAmbience } from "@/lib/music";
 import { playCardDeal } from "@/lib/card-sound";
 import { playGoodEvening, playPlaceYourBets, preloadDealerTalk } from "@/lib/dealer-talk";
 import { speakHandTotal, speakRewardCongrats, speakTipThanks } from "@/lib/dealer-voice";
+import { loadProfile } from "@/lib/player-profile";
 
 type ActionBurst = { action: PlayerActionType; id: string };
 
@@ -72,14 +78,59 @@ export type TableExperienceProps = {
   actions?: ReturnType<typeof useTableSocket>;
   /** Friends table handles its own join greets — skip the solo once-per-tab line. */
   skipJoinGreet?: boolean;
+  /** From the start screen — used for Isla context + seat name. */
+  playerName?: string;
+  avatarUrl?: string | null;
+  /** Fires once AI Isla is live (or Bey is unavailable so the table can open). */
+  onDealerReady?: () => void;
 };
 
 export function TableExperience({
   playerId: playerIdProp,
   actions,
   skipJoinGreet = false,
+  playerName,
+  avatarUrl = null,
+  onDealerReady,
 }: TableExperienceProps = {}) {
-  const socketActions = useTableSocket({ enabled: !actions });
+  const [feedStatus, setFeedStatus] = useState<FeedStatus>("idle");
+  // Ready from first paint — never flash the old loop while we flip this on.
+  const beyWanted = process.env.NEXT_PUBLIC_BEY_DEALER === "1";
+  const dealerSources = beyWanted
+    ? []
+    : process.env.NEXT_PUBLIC_DEALER_STREAM_URL
+      ? [process.env.NEXT_PUBLIC_DEALER_STREAM_URL]
+      : DEMO_DEALER_SOURCES;
+  const mainRef = useRef<HTMLElement>(null);
+  const dealerVideoRef = useRef<HTMLVideoElement>(null);
+  const profileName = useMemo(
+    () => playerName?.trim() || loadProfile().name.trim() || "Player",
+    [playerName],
+  );
+  const profileAvatar = useMemo(
+    () => avatarUrl ?? loadProfile().avatarUrl,
+    [avatarUrl],
+  );
+  const bey = useBeyDealer({
+    enabled: beyWanted,
+    videoRef: dealerVideoRef,
+    userName: profileName,
+    tableId: DEFAULT_TABLE_ID,
+  });
+  const beyLive = bey.status === "live";
+  // Shoe only starts when Isla’s video is actually live — never with hardcoded VO.
+  const tableOpen = !beyWanted || beyLive;
+  const waitingForIsla = beyWanted && !beyLive;
+  // Always AI stream mode when Bey is on — never show the old green-screen loop.
+  const beyStream = beyWanted;
+  // Never fall back to canned dealer lines while AI Isla is the product.
+  const loopVoice = !beyWanted;
+
+  const socketActions = useTableSocket({
+    enabled: !actions && tableOpen,
+    displayName: playerName?.trim() || undefined,
+    avatarUrl,
+  });
   const {
     addChip,
     clearBet,
@@ -94,10 +145,6 @@ export function TableExperience({
     playerId: socketPlayerId,
   } = actions ?? socketActions;
   const localPlayerId = playerIdProp ?? socketPlayerId ?? DEFAULT_PLAYER_ID;
-  const [feedStatus, setFeedStatus] = useState<FeedStatus>("idle");
-  const dealerSources = process.env.NEXT_PUBLIC_DEALER_STREAM_URL
-    ? [process.env.NEXT_PUBLIC_DEALER_STREAM_URL]
-    : DEMO_DEALER_SOURCES;
   const state = usePlayerStore((s) => s.state);
   const events = usePlayerStore((s) => s.events);
   const chat = usePlayerStore((s) => s.chat);
@@ -124,14 +171,17 @@ export function TableExperience({
   // Lounge track on by default — browsers need a gesture, so we arm immediately and retry on first tap.
   useEffect(() => {
     ensureAmbience();
-    preloadDealerTalk();
     void preloadChipSfx();
     preloadRewardClaim();
+    // Canned dealer VO only when AI Isla isn't taking the mic.
+    if (process.env.NEXT_PUBLIC_BEY_DEALER === "1") return;
+    preloadDealerTalk();
     if (skipJoinGreet) return;
-    playGoodEvening();
+    const greetName = loadProfile().name.trim() || undefined;
+    playGoodEvening({ name: greetName });
     const armVoice = () => {
       unlockAudio();
-      playGoodEvening();
+      playGoodEvening({ name: greetName });
       window.removeEventListener("pointerdown", armVoice);
       window.removeEventListener("keydown", armVoice);
     };
@@ -150,23 +200,240 @@ export function TableExperience({
     seat: number;
   } | null>(null);
   const seenActionEvents = useRef(new Set<string>());
-  const mainRef = useRef<HTMLElement>(null);
-  const dealerVideoRef = useRef<HTMLVideoElement>(null);
   const reactions = useReactions();
+
+  useEffect(() => {
+    if (!onDealerReady) return;
+    if (tableOpen) onDealerReady();
+  }, [tableOpen, onDealerReady]);
+
+  // Beats Isla should react to — facts only (agent turns these into spoken lines).
+  const beyBeatsRef = useRef<
+    Array<{
+      id: string;
+      kind: string;
+      name?: string;
+      names?: string[];
+      emoji?: string;
+      amount?: number;
+      hand?: string;
+      total?: string;
+    }>
+  >([]);
+  const seenBeyBeats = useRef(new Set<string>());
+  function pushBeyBeat(
+    id: string,
+    kind: string,
+    extra?: {
+      name?: string;
+      names?: string[];
+      emoji?: string;
+      amount?: number;
+      hand?: string;
+      total?: string;
+    },
+  ) {
+    if (seenBeyBeats.current.has(id)) return;
+    seenBeyBeats.current.add(id);
+    beyBeatsRef.current = [...beyBeatsRef.current.slice(-24), { id, kind, ...extra }];
+  }
+
+  // Push shoe to Isla — throttle clocks so countdown ticks don't hammer the main thread.
+  const actingPlayerId = state?.actingPlayerId ?? null;
+  const tablePhase = state?.table.phase;
+  const chatLen = chat.length;
+  const chatTail = chat[chat.length - 1]?.id ?? "";
+  useEffect(() => {
+    if (!bey.conversationId || !state) return;
+    let cancelled = false;
+    const push = () => {
+      if (cancelled) return;
+      const seats = state.players
+        .filter((p) => p.seat != null)
+        .map((p) => {
+          const hand = p.hands[p.activeHandIndex] ?? p.hands[0];
+          return {
+            seat: p.seat as number,
+            name: p.displayName,
+            isLocal: p.id === localPlayerId,
+            bet: p.currentBet,
+            cards: (hand?.cards ?? []).map(cardLabel),
+            total: handLabel(hand),
+          };
+        });
+      const acting = state.players.find((p) => p.id === state.actingPlayerId);
+      const local = state.players.find((p) => p.id === localPlayerId);
+      const localHand = local?.hands[local.activeHandIndex] ?? local?.hands[0];
+      const summary = buildBeyTableSummary({
+        phase: state.table.phase,
+        dealerTotal: handLabel(state.dealer.hand),
+        actingName: acting?.displayName ?? null,
+        seats,
+        chat: chat.slice(-10).map((m) => ({ name: m.senderName, text: m.text })),
+      });
+      void fetch("/api/bey/context", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: bey.conversationId,
+          phase: state.table.phase,
+          actingSeat: acting?.seat ?? null,
+          actingName:
+            acting?.id === localPlayerId
+              ? profileName
+              : (acting?.displayName ?? null),
+          dealerTotal: handLabel(state.dealer.hand),
+          dealerCards: (state.dealer.hand?.cards ?? []).map(cardLabel),
+          bettingRemaining,
+          actionRemaining,
+          localSeat: local?.seat ?? null,
+          localName: profileName,
+          seats: seats.map((s) =>
+            s.isLocal ? { ...s, name: profileName || s.name } : s,
+          ),
+          recentChat: chat.slice(-10).map((m) => ({
+            name:
+              m.senderId === localPlayerId || m.senderName === "You"
+                ? profileName
+                : m.senderName,
+            text: m.text,
+            kind: m.kind,
+            isLocal:
+              m.senderId === localPlayerId ||
+              m.senderName === "You" ||
+              m.senderName === profileName,
+          })),
+          beats: beyBeatsRef.current.slice(-12),
+          summary:
+            summary +
+            (localHand
+              ? `\nLocal player ${profileName} hand: [${(localHand.cards ?? [])
+                  .map(cardLabel)
+                  .join(" ")}] total ${handLabel(localHand)}.`
+              : ""),
+        }),
+      }).catch(() => undefined);
+    };
+    push();
+    // Clocks only — refresh every 2s without re-running on every second tick.
+    const id = window.setInterval(push, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [
+    bey.conversationId,
+    state,
+    actingPlayerId,
+    tablePhase,
+    chatLen,
+    chatTail,
+    roomReactions.length,
+    localPlayerId,
+    profileName,
+    // clocks intentionally omitted — interval covers them
+    bettingRemaining > 0,
+    actionRemaining > 0,
+  ]);
+
+  // Map throws aimed at the dealer → Isla reacts (with thrower's live hand).
+  useEffect(() => {
+    for (const reaction of roomReactions) {
+      if (reaction.kind !== "throw" || reaction.toSeat !== DEALER_THROW_SEAT) continue;
+      const thrower = state?.players.find((p) => p.id === reaction.senderId);
+      const hand = thrower?.hands[thrower.activeHandIndex] ?? thrower?.hands[0];
+      pushBeyBeat(`throw-${reaction.id}`, "throw_dealer", {
+        name: reaction.senderName,
+        emoji: reaction.emoji,
+        hand: (hand?.cards ?? []).map(cardLabel).join(" ") || undefined,
+        total: handLabel(hand) ?? undefined,
+      });
+    }
+  }, [roomReactions, state]);
 
   const seenHandVoice = useRef(new Set<string>());
   useEffect(() => {
-    const me = usePlayerStore.getState().state?.players.find((p) => p.id === localPlayerId);
+    const table = usePlayerStore.getState().state;
+    const me = table?.players.find((p) => p.id === localPlayerId);
     for (const event of events) {
       if (event.type === "HAND_COMPLETED" && !seenHandVoice.current.has(event.id)) {
         seenHandVoice.current.add(event.id);
-        // Only call the local player's finished hand — avoids a chorus of bot totals.
         const handId = event.payload.handId;
-        const isMine = me?.hands.some((h) => h.id === handId);
-        if (isMine || event.payload.owner === "dealer") {
-          const { isBust, isBlackjack, total } = event.payload;
-          const label = isBust ? "BUST" : isBlackjack ? "BJ" : String(total);
-          void speakHandTotal(label);
+        const ownerPlayer = table?.players.find((p) => p.hands.some((h) => h.id === handId));
+        const isMine = ownerPlayer?.id === localPlayerId;
+        const { isBust, isBlackjack, total, owner } = event.payload;
+        if (loopVoice && (isMine || owner === "dealer") && (isBust || isBlackjack)) {
+          void speakHandTotal(isBust ? "BUST" : isBlackjack ? "BJ" : String(total));
+        }
+        // Whole table — BJ / bust for any seat, not only the human.
+        const who =
+          owner === "dealer"
+            ? "Isla"
+            : ownerPlayer?.displayName && ownerPlayer.displayName !== "You"
+              ? ownerPlayer.displayName
+              : isMine
+                ? profileName
+                : "Player";
+        if (owner === "dealer" && isBust) {
+          pushBeyBeat(event.id, "dealer_bust");
+        } else if (owner === "dealer" && (isBlackjack || total === 21)) {
+          pushBeyBeat(event.id, "dealer_21");
+        } else if (owner !== "dealer" && isBlackjack) {
+          pushBeyBeat(event.id, "player_bj", { name: who });
+        } else if (owner !== "dealer" && isBust) {
+          pushBeyBeat(event.id, "player_bust", { name: who });
+        }
+      }
+      if (event.type === "ROUND_SETTLED") {
+        const snap = usePlayerStore.getState().state;
+        const settlements = event.payload.settlements ?? [];
+        if (seenHandVoice.current.has(event.id)) continue;
+        seenHandVoice.current.add(event.id);
+        const named = settlements.map((s) => {
+          const p = snap?.players.find((x) => x.id === s.playerId);
+          const n =
+            p?.id === localPlayerId
+              ? profileName
+              : p?.displayName && p.displayName !== "You"
+                ? p.displayName
+                : "Player";
+          return { ...s, name: n };
+        });
+        const winners = named.filter(
+          (s) => s.outcome === "win" || s.outcome === "blackjack",
+        );
+        const losers = named.filter(
+          (s) => s.outcome === "lose" || s.outcome === "bust",
+        );
+        const pushes = named.filter((s) => s.outcome === "push");
+        const bjs = named.filter((s) => s.outcome === "blackjack");
+        // One table-level call — never only celebrate the human seat.
+        if (named.length > 0 && winners.length === named.length) {
+          pushBeyBeat(event.id, "table_all_win", {
+            names: winners.map((w) => w.name),
+          });
+        } else if (winners.length >= 2) {
+          pushBeyBeat(event.id, "table_multi_win", {
+            names: winners.map((w) => w.name),
+          });
+        } else if (winners.length === 1) {
+          pushBeyBeat(`${event.id}-win`, "player_win", { name: winners[0]!.name });
+        } else if (losers.length === named.length && named.length > 0) {
+          pushBeyBeat(event.id, "table_dealer_wins");
+        } else if (losers.length === 1 && winners.length === 0) {
+          pushBeyBeat(`${event.id}-lose`, "player_lose", { name: losers[0]!.name });
+        }
+        // Named sympathy / push when the round was mixed — keeps her present.
+        if (winners.length > 0 && losers.length === 1) {
+          pushBeyBeat(`${event.id}-lose`, "player_lose", { name: losers[0]!.name });
+        }
+        for (const p of pushes.slice(0, 1)) {
+          pushBeyBeat(`${event.id}-push-${p.playerId}`, "player_push", {
+            name: p.name,
+          });
+        }
+        for (const bj of bjs) {
+          pushBeyBeat(`${event.id}-bj-${bj.playerId}`, "player_bj", { name: bj.name });
         }
       }
       if (event.type !== "PLAYER_ACTION_RECEIVED") {
@@ -189,7 +456,7 @@ export function TableExperience({
         });
       }, 1900);
     }
-  }, [events, localPlayerId]);
+  }, [events, localPlayerId, loopVoice, profileName]);
 
   const playersBySeat = useMemo(() => {
     const map = new Map<number, Player>();
@@ -251,14 +518,14 @@ export function TableExperience({
     }
   }, [roundId, phase, result, localPlayer, signalMission]);
 
-  // Dealer: "place your bets" every time betting opens
+  // Dealer: "place your bets" every time betting opens (loop VO only — Isla says this live)
   const wasBetting = useRef(false);
   useEffect(() => {
-    if (betting && !wasBetting.current) {
+    if (betting && !wasBetting.current && loopVoice) {
       playPlaceYourBets();
     }
     wasBetting.current = betting;
-  }, [betting]);
+  }, [betting, loopVoice]);
 
   // Heads-up chime the moment the action passes to you
   useEffect(() => {
@@ -306,8 +573,8 @@ export function TableExperience({
     );
     return {
       seat,
-      displayName: seated?.displayName ?? null,
-      avatarUrl: seated?.avatarUrl,
+      displayName: isLocal ? profileName : (seated?.displayName ?? null),
+      avatarUrl: isLocal ? (profileAvatar ?? seated?.avatarUrl) : seated?.avatarUrl,
       isLocal,
       chips: seated?.chipStack ?? [],
       bet: seated?.currentBet ?? 0,
@@ -393,8 +660,18 @@ export function TableExperience({
     }
   }, [roomReactions, localPlayerId, reactions.spawnEmote, reactions.spawnThrow]);
 
+  const panelOpen = panel !== "none";
+  const tallPanel =
+    panel === "dealer" || panel === "wallet" || panel === "rewards" || panel === "settings";
+
   return (
-    <main ref={mainRef} className="relative min-h-dvh overflow-clip bg-black text-foreground">
+    <div
+      className={cn(
+        "flex h-dvh max-h-dvh overflow-hidden bg-black text-foreground",
+        isMobile ? "flex-col" : "flex-row",
+      )}
+    >
+    <main ref={mainRef} className="relative min-h-0 min-w-0 flex-1 overflow-clip">
       <EnvironmentLayer settings={settings} />
       <BackgroundEffects settings={settings} />
       <DealerVideoLayer
@@ -402,7 +679,32 @@ export function TableExperience({
         dealerName={dealerName}
         onStatusChange={setFeedStatus}
         videoRef={dealerVideoRef}
+        streamMode={beyStream}
       />
+      {waitingForIsla ? (
+        <div className="absolute inset-0 z-[40] flex flex-col items-center justify-center bg-[#07070a]/92 backdrop-blur-md">
+          <p className="text-[11px] tracking-[0.34em] text-white/40 uppercase">AI dealer</p>
+          <h2 className="mt-2 font-display text-4xl leading-none text-white">{dealerName}</h2>
+          <p className="mt-4 text-sm text-white/50">
+            {bey.status === "checking"
+              ? "Checking the room…"
+              : bey.status === "error" || bey.status === "unavailable"
+                ? "Reconnecting Isla…"
+                : "Joining the table…"}
+          </p>
+          <p className="mt-2 max-w-[16rem] text-center text-[12px] text-white/35">
+            Hands deal the moment she’s live — no filler voice.
+          </p>
+          {bey.error ? (
+            <p className="mt-3 max-w-[20rem] text-center text-[11px] text-white/30">{bey.error}</p>
+          ) : null}
+        </div>
+      ) : null}
+      {beyWanted && bey.status === "error" ? (
+        <div className="pointer-events-none absolute left-1/2 top-[4.5rem] z-[8] -translate-x-1/2 rounded-full border border-white/12 bg-black/50 px-3 py-1 text-[10px] text-white/70 backdrop-blur-md">
+          AI dealer unavailable: {bey.error ?? "error"}
+        </div>
+      ) : null}
       <MoodOverlay settings={settings} />
 
       <TableScene
@@ -489,6 +791,7 @@ export function TableExperience({
           ) : null
         }
         dealerVideoRef={dealerVideoRef}
+        streamMode={beyStream}
       />
 
       <StreamChat
@@ -525,6 +828,15 @@ export function TableExperience({
               reactions.spawnThrow(emoji, localSpot, to);
               sendReaction("throw", emoji, toSeat);
               signalMission({ type: "reaction" });
+              if (toSeat === DEALER_THROW_SEAT) {
+                const meHand = localPlayer?.hands[localPlayer.activeHandIndex] ?? localPlayer?.hands[0];
+                pushBeyBeat(`throw-local-${Date.now()}`, "throw_dealer", {
+                  name: profileName,
+                  emoji,
+                  hand: (meHand?.cards ?? []).map(cardLabel).join(" ") || undefined,
+                  total: handLabel(meHand) ?? undefined,
+                });
+              }
             }}
           />
         ) : null}
@@ -621,19 +933,6 @@ export function TableExperience({
 
       <WinConfetti active={Boolean(won)} big={result?.outcome === "blackjack"} />
 
-      <WalletDrawer
-        open={panel === "wallet"}
-        onOpenChange={(open) => setPanel(open ? "wallet" : "none")}
-        balance={balance}
-      />
-
-      <AtmosphereDrawer
-        open={panel === "settings"}
-        onOpenChange={(open) => setPanel(open ? "settings" : "none")}
-        settings={settings}
-        onChange={updateSettings}
-      />
-
       {isMobile ? <RotateHint /> : null}
 
       {/* Ghost composer — opens the side chat */}
@@ -652,7 +951,28 @@ export function TableExperience({
         active={panel === "rewards"}
         onClick={() => setPanel(panel === "rewards" ? "none" : "rewards")}
       />
+    </main>
+
+    <PanelDock
+      open={panelOpen}
+      side={isMobile ? "bottom" : "right"}
+      size={tallPanel ? "tall" : "default"}
+    >
+      <WalletDrawer
+        docked
+        open={panel === "wallet"}
+        onOpenChange={(open) => setPanel(open ? "wallet" : "none")}
+        balance={balance}
+      />
+      <AtmosphereDrawer
+        docked
+        open={panel === "settings"}
+        onOpenChange={(open) => setPanel(open ? "settings" : "none")}
+        settings={settings}
+        onChange={updateSettings}
+      />
       <MissionsDrawer
+        docked
         open={panel === "rewards"}
         onOpenChange={(open) => setPanel(open ? "rewards" : "none")}
         book={missions}
@@ -669,21 +989,26 @@ export function TableExperience({
             unlockLabel,
           });
           unlockAudio();
-          // Sound comes from fireClaimConfetti → playRedeemSfx (once, soft).
           fireClaimConfetti(buttonEl);
           window.setTimeout(() => {
-            void speakRewardCongrats({
-              name: localPlayer?.displayName,
-              missionTitle: mission.title,
-              amount,
-              unlockLabel,
-            });
+            if (loopVoice) {
+              void speakRewardCongrats({
+                name: localPlayer?.displayName,
+                missionTitle: mission.title,
+                amount,
+                unlockLabel,
+              });
+            } else {
+              pushBeyBeat(`reward-${mission.id}-${Date.now()}`, "player_win", {
+                name: localPlayer?.displayName ?? profileName,
+              });
+            }
           }, 450);
         }}
       />
-
       {state?.dealer.profile ? (
         <DealerDrawer
+          docked
           open={panel === "dealer"}
           onOpenChange={(open) => setPanel(open ? "dealer" : "none")}
           profile={state.dealer.profile}
@@ -697,15 +1022,22 @@ export function TableExperience({
           onTip={(amount) => {
             tip(amount);
             signalMission({ type: "tip", amount });
-            void speakTipThanks({
-              name: localPlayer?.displayName,
-              amount,
-            });
+            if (loopVoice) {
+              void speakTipThanks({
+                name: localPlayer?.displayName,
+                amount,
+              });
+            } else {
+              pushBeyBeat(`tip-${amount}-${Date.now()}`, "tip", {
+                name: localPlayer?.displayName ?? profileName,
+                amount,
+              });
+            }
           }}
         />
       ) : null}
-
       <ChatDrawer
+        docked
         open={panel === "chat"}
         onOpenChange={(open) => setPanel(open ? "chat" : "none")}
         messages={chat}
@@ -713,7 +1045,8 @@ export function TableExperience({
         dealerId={state?.dealer.id}
         onDealerTap={() => setPanel("dealer")}
       />
-    </main>
+    </PanelDock>
+    </div>
   );
 }
 
@@ -878,4 +1211,8 @@ function handLabel(hand?: Hand | null): string | null {
     return "BJ";
   }
   return String(hand.total);
+}
+
+function cardLabel(card: Card): string {
+  return `${card.rank}${card.suit?.[0] ?? ""}`;
 }

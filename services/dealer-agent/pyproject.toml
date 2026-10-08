@@ -1,0 +1,13 @@
+[project]
+name = "dealr-dealer-agent"
+version = "0.1.0"
+description = "LiveKit + Beyond Presence AI dealer for Dealr"
+requires-python = ">=3.10"
+dependencies = [
+  "livekit-agents[bey,openai,silero,deepgram]~=1.2",
+  "python-dotenv>=1.0",
+  "httpx>=0.27",
+]
+
+[project.scripts]
+dealr-dealer = "agent:main"

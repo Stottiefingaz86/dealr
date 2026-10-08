@@ -34,7 +34,7 @@ export interface PlayerEnvironmentSettings {
 export const DEFAULT_ENVIRONMENT_SETTINGS: PlayerEnvironmentSettings = {
   dealerVolume: 0.8,
   tableVolume: 0.5,
-  ambientVolume: 0.35,
+  ambientVolume: 0.2,
   socialVolume: 0.4,
   lightingHue: 265,
   lightingBrightness: 0.72,

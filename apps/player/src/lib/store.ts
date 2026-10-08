@@ -102,11 +102,12 @@ export const usePlayerStore = create<PlayerStore>((set) => ({
   setConnected: (connected) => set({ connected }),
   setState: (state) => set({ state }),
   appendEvent: (event) =>
-    set((current) => ({
-      events: current.events.some((item) => item.id === event.id)
-        ? current.events
-        : [...current.events, event],
-    })),
+    set((current) => {
+      if (current.events.some((item) => item.id === event.id)) return current;
+      const next = [...current.events, event];
+      // Cap so long sessions don't slow the table effect scanners.
+      return { events: next.length > 80 ? next.slice(-80) : next };
+    }),
   setEvents: (events) => set({ events }),
   setChat: (chat) => set({ chat }),
   appendChat: (message) =>
